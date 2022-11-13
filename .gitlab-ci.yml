@@ -1,0 +1,37 @@
+include:
+  - project: 'pub/ci'
+    ref: '0.0.5'
+    file: '/.go-library.gitlab-ci.yml'
+
+.integration_test_vars: &integration_test_vars
+  GO_TEST_ARGS: "-race -covermode atomic"
+  GO_COVER_EXCLUDE: "*_mock_test.go"
+  POSTGRES_DB: postgres
+  POSTGRES_USER: runner
+  POSTGRES_HOST: postgres
+  POSTGRES_PASSWORD: ""
+  POSTGRES_HOST_AUTH_METHOD: "trust"
+  DATABASE_DSN: "host=postgres port=5432 dbname=postgres user=runner sslmode=disable"
+
+.integration_test_props: &integration_test_props
+  tags:
+    - tests
+    - gitlab-services
+  services:
+    - postgres:14.1
+  before_script:
+    - make db-up
+
+test 1.16:
+  extends: .test
+  <<: *integration_test_props
+  variables:
+    GO_VERSION: "1.16"
+    <<: *integration_test_vars
+
+test 1.17:
+  extends: .test
+  <<: *integration_test_props
+  variables:
+    GO_VERSION: "1.17"
+    <<: *integration_test_vars
