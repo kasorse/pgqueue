@@ -87,6 +87,13 @@ func (w *worker) processTask(
 	handlerContext, cancelHandler := context.WithTimeout(ctx, time.Duration(w.attemptLimitSeconds)*time.Second)
 	defer cancelHandler()
 
+	delay := w.delayAfterRefusedSeconds
+	if len(w.progressiveDelayAfterRefusedSeconds) != 0 {
+		attemptIndex := w.attemptsCount - task.attemptsLeft
+		delayIndex := attemptIndex - 1
+		delay = getDelayByAttemptIndex(w.progressiveDelayAfterRefusedSeconds, delayIndex)
+	}
+
 	startTime := time.Now()
 	err := wrapHandler(handler).HandleTask(handlerContext, task)
 	duration := time.Since(startTime)
@@ -109,13 +116,6 @@ func (w *worker) processTask(
 			logger.Errorf(ctx, "no attempts left, spent %d ms and failed with error: %v", handleTimeMs, err)
 		}
 
-		delay := w.delayAfterRefusedSeconds
-		if len(w.progressiveDelayAfterRefusedSeconds) != 0 {
-			attemptIndex := w.attemptsCount - task.attemptsLeft
-			delayIndex := attemptIndex - 1
-			delay = getDelayByAttemptIndex(w.progressiveDelayAfterRefusedSeconds, delayIndex)
-		}
-
 		refuseErr := w.storage.refuseTask(ctx, task.ID, err.Error(), delay)
 		if refuseErr != nil {
 			logger.Errorf(ctx, "refuseTask error: %v", refuseErr)
@@ -123,7 +123,7 @@ func (w *worker) processTask(
 	} else {
 		logger.Infof(ctx, "spent %d ms and processed successfully", handleTimeMs)
 
-		completeErr := w.storage.completeTask(ctx, task.ID)
+		completeErr := w.storage.completeTask(ctx, task.ID, delay)
 		if completeErr != nil {
 			logger.Errorf(ctx, "completeTask error: %v", completeErr)
 		}

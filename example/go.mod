@@ -5,6 +5,7 @@ go 1.17
 require (
 	github.com/jmoiron/sqlx v1.3.4
 	github.com/kasorse/pgqueue v0.0.0
+	github.com/lib/pq v1.2.0
 )
 
 replace github.com/kasorse/pgqueue v0.0.0 => ../

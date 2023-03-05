@@ -66,6 +66,8 @@ type Options struct {
 	// account the AttemptLimitSeconds and DelayAfterRefusedSeconds,
 	// ProgressiveDelayAfterRefusedSeconds parameters.
 	TTLSeconds uint32
+	// Repeat task endlessly.
+	RepeatEndlessly bool
 }
 
 type kindDescription struct {
@@ -74,10 +76,10 @@ type kindDescription struct {
 }
 
 type storage interface {
-	createTask(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration) error
-	createTaskTx(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration) error
+	createTask(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool) error
+	createTaskTx(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool) error
 	getTasks(ctx context.Context, kind int16, workerCountLimitForInstance uint16, workerCountLimitForQueueKind uint16) ([]*Task, error)
-	completeTask(ctx context.Context, id int64) error
+	completeTask(ctx context.Context, id int64, delaySeconds uint32) error
 	refuseTask(ctx context.Context, id int64, reason string, delaySeconds uint32) error
 	abortTask(ctx context.Context, id int64, reason string) error
 	cancelTaskByKey(ctx context.Context, kind int16, key string, reason string) error
@@ -159,7 +161,7 @@ func (qp *processor) AppendTask(ctx context.Context, kind int16, payload []byte)
 		return ErrUnexpectedTaskKind
 	}
 
-	err := qp.storage.createTask(ctx, kind, kindData.opts.MaxAttempts, payload, kindData.opts.TTLSeconds, emptyKey, zeroDuration)
+	err := qp.storage.createTask(ctx, kind, kindData.opts.MaxAttempts, payload, kindData.opts.TTLSeconds, emptyKey, zeroDuration, kindData.opts.RepeatEndlessly)
 	if err != nil {
 		return errors.Wrap(err, "storage.createTask error")
 	}
@@ -174,7 +176,7 @@ func (qp *processor) AppendTaskTx(ctx context.Context, tx sqlx.Tx, kind int16, p
 		return ErrUnexpectedTaskKind
 	}
 
-	err := qp.storage.createTaskTx(ctx, tx, kind, kindData.opts.MaxAttempts, payload, kindData.opts.TTLSeconds, emptyKey, zeroDuration)
+	err := qp.storage.createTaskTx(ctx, tx, kind, kindData.opts.MaxAttempts, payload, kindData.opts.TTLSeconds, emptyKey, zeroDuration, kindData.opts.RepeatEndlessly)
 	if err != nil {
 		return errors.Wrap(err, "storage.createTaskTx error")
 	}
@@ -217,7 +219,7 @@ func (qp *processor) AppendTaskWithOptions(ctx context.Context, kind int16, payl
 		useOpts = *opts
 	}
 
-	err := qp.storage.createTask(ctx, kind, useOpts.MaxAttempts, payload, useOpts.TTLSeconds, key, delay)
+	err := qp.storage.createTask(ctx, kind, useOpts.MaxAttempts, payload, useOpts.TTLSeconds, key, delay, opts.RepeatEndlessly)
 	if err != nil {
 		return errors.Wrap(err, "storage.createTask error")
 	}
@@ -249,7 +251,7 @@ func (qp *processor) AppendTaskWithOptionsTx(ctx context.Context, tx sqlx.Tx, ki
 		useOpts = *opts
 	}
 
-	err := qp.storage.createTaskTx(ctx, tx, kind, useOpts.MaxAttempts, payload, useOpts.TTLSeconds, key, delay)
+	err := qp.storage.createTaskTx(ctx, tx, kind, useOpts.MaxAttempts, payload, useOpts.TTLSeconds, key, delay, opts.RepeatEndlessly)
 	if err != nil {
 		return errors.Wrap(err, "storage.createTask error")
 	}

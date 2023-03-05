@@ -52,11 +52,11 @@ func rollbackTx(ctx context.Context, tx *sqlx.Tx) {
 }
 
 func (s *sqlStorage) createTask(ctx context.Context, kind int16, maxAttempts uint16, payload []byte,
-	ttlSeconds uint32, externalKey string, delay time.Duration) error {
+	ttlSeconds uint32, externalKey string, delay time.Duration, endlessly bool) error {
 
 	insertQuery := `
-		INSERT INTO public.queue (kind, attempts_left, payload, expires_at, external_key, delayed_till)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO public.queue (kind, attempts_left, endlessly, payload, expires_at, external_key, delayed_till)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`
 
 	delayedTill := time.Now().Add(delay)
@@ -67,15 +67,15 @@ func (s *sqlStorage) createTask(ctx context.Context, kind int16, maxAttempts uin
 		nullableExternalKey = &externalKey
 	}
 
-	_, err := s.db.ExecContext(ctx, insertQuery, kind, maxAttempts, string(payload), expiresAt, nullableExternalKey, delayedTill)
+	_, err := s.db.ExecContext(ctx, insertQuery, kind, maxAttempts, endlessly, string(payload), expiresAt, nullableExternalKey, delayedTill)
 	return err
 }
 
 func (s *sqlStorage) createTaskTx(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte,
-	ttlSeconds uint32, externalKey string, delay time.Duration) error {
+	ttlSeconds uint32, externalKey string, delay time.Duration, endlessly bool) error {
 	insertQuery := `
-	INSERT INTO public.queue (kind, attempts_left, payload, expires_at, external_key, delayed_till)
-	VALUES ($1, $2, $3, $4, $5, $6)
+	INSERT INTO public.queue (kind, attempts_left, endlessly, payload, expires_at, external_key, delayed_till)
+	VALUES ($1, $2, $3, $4, $5, $6, $7)
 `
 
 	delayedTill := time.Now().Add(delay)
@@ -86,7 +86,7 @@ func (s *sqlStorage) createTaskTx(ctx context.Context, tx sqlx.Tx, kind int16, m
 		nullableExternalKey = &externalKey
 	}
 
-	_, err := tx.ExecContext(ctx, insertQuery, kind, maxAttempts, string(payload), expiresAt, nullableExternalKey, delayedTill)
+	_, err := tx.ExecContext(ctx, insertQuery, kind, maxAttempts, endlessly, string(payload), expiresAt, nullableExternalKey, delayedTill)
 	return err
 }
 
@@ -105,7 +105,7 @@ func (s *sqlStorage) getTasks(ctx context.Context, kind int16, workerCountLimitF
 	query := `
 		UPDATE public.queue SET
 			status = $4,
-			attempts_left = attempts_left - 1,
+			attempts_left = CASE WHEN not endlessly THEN attempts_left - 1 ELSE attempts_left END,
 			updated = $2
 		WHERE id IN (
 			SELECT id
@@ -120,7 +120,6 @@ func (s *sqlStorage) getTasks(ctx context.Context, kind int16, workerCountLimitF
 		)
 		RETURNING id, kind, attempts_left, payload, external_key
 	`
-
 	var dbTasks []*dbTask
 
 	err := s.withTransaction(ctx, "get task from queue", func(cxt context.Context, tx *sqlx.Tx) error {
@@ -168,13 +167,17 @@ func (s *sqlStorage) getTasks(ctx context.Context, kind int16, workerCountLimitF
 	return fromDBTasks(dbTasks), err
 }
 
-func (s *sqlStorage) completeTask(ctx context.Context, id int64) error {
+func (s *sqlStorage) completeTask(ctx context.Context, id int64, delaySeconds uint32) error {
 	updateQuery := `
 		UPDATE public.queue SET
-			status = $2,
-			updated = $3
+			status = CASE WHEN not endlessly THEN $2::smallint ELSE $4::smallint END,
+			updated = $3,
+			delayed_till = $5
 		WHERE id = $1
 	`
+
+	now := time.Now()
+	delayedTill := now.Add(time.Duration(delaySeconds) * time.Second)
 
 	_, err := s.db.ExecContext(
 		ctx,
@@ -182,6 +185,8 @@ func (s *sqlStorage) completeTask(ctx context.Context, id int64) error {
 		id,                   // $1
 		status.ClosedSuccess, // $2
 		time.Now(),           // $3
+		status.OpenMustRetry, // $4
+		delayedTill,          // $5
 	)
 	return err
 }
@@ -189,7 +194,7 @@ func (s *sqlStorage) completeTask(ctx context.Context, id int64) error {
 func (s *sqlStorage) refuseTask(ctx context.Context, id int64, reason string, delaySeconds uint32) error {
 	updateQuery := `
 		UPDATE public.queue SET
-			status = CASE WHEN attempts_left > 0 THEN $3 ELSE $4 END,
+			status = CASE WHEN attempts_left > 0 THEN $3::smallint ELSE $4::smallint END,
 			delayed_till = $2,
 			messages = array_append(messages, $5),
 			updated = $6
@@ -240,6 +245,7 @@ func (s *sqlStorage) closeExpiredTasks(ctx context.Context, kind int16) error {
 		WHERE kind = $1
 		  AND status < 50
 		  AND expires_at <= $3
+		  AND NOT endlessly
 	`
 
 	_, err := s.db.ExecContext(
@@ -255,7 +261,7 @@ func (s *sqlStorage) closeExpiredTasks(ctx context.Context, kind int16) error {
 func (s *sqlStorage) repairLostTasks(ctx context.Context, kind int16, lossSeconds uint32) error {
 	updateQuery := `
 		UPDATE public.queue SET
-			status = CASE WHEN attempts_left > 0 THEN $4 ELSE $5 END
+			status = CASE WHEN attempts_left > 0 OR endlessly is true THEN $4::smallint ELSE $5::smallint END
 		WHERE kind = $1
 		  AND status = $2
 		  AND updated <= $3
@@ -347,7 +353,7 @@ func (s *sqlStorage) addRetriesToFailedTasks(ctx context.Context, kind int16, re
 type dbTask struct {
 	ID           int64          `db:"id"`
 	Kind         int16          `db:"kind"`
-	Status       uint16         `db:"status"`
+	Status       uint8          `db:"status"`
 	AttemptsLeft uint16         `db:"attempts_left"`
 	Payload      []byte         `db:"payload"`
 	ExternalKey  sql.NullString `db:"external_key"`

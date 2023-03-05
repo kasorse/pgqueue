@@ -1,7 +1,7 @@
 package status
 
 // Status represents the status of a task.
-type Status int64
+type Status uint8
 
 // Possible task statuses.
 const (

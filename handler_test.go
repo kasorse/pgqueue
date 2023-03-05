@@ -72,7 +72,7 @@ func (th *testHandler) HandleTask(ctx context.Context, task *Task) error {
 		th.t.Fatal("cannot unmarshal test payload", err)
 	}
 	taskID := payload.TaskID
-	series, ok := th.responses[taskID]
+	errorSeries, ok := th.responses[taskID]
 	if !ok {
 		th.t.Fatal("unexpected task series")
 	}
@@ -83,10 +83,10 @@ func (th *testHandler) HandleTask(ctx context.Context, task *Task) error {
 	}
 
 	// pos also represents the number of (performed) attempts to handle a task
-	if pos >= int64(len(series)) || pos >= maxAttempts {
-		th.t.Fatal("len mismatch, this should not be called", pos, len(series), maxAttempts)
+	if pos >= int64(len(errorSeries)) || pos >= maxAttempts {
+		th.t.Fatal("len mismatch, this should not be called", pos, len(errorSeries), maxAttempts)
 	}
-	ret := series[pos]
+	ret := errorSeries[pos]
 	th.positions[taskID]++ // increment number of calls
 	return ret
 }

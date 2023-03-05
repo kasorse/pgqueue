@@ -128,7 +128,7 @@ func Test_worker_processTask(t *testing.T) {
 				})
 			}
 			if tc.expectComplete {
-				store.completeTaskMock.Set(func(ctx context.Context, id int64) (err error) {
+				store.completeTaskMock.Set(func(ctx context.Context, id int64, delaySeconds uint32) (err error) {
 					return nil
 				})
 			}
