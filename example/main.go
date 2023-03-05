@@ -12,6 +12,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/kasorse/pgqueue"
+	_ "github.com/lib/pq"
 )
 
 const myTaskKind int16 = 42
@@ -28,9 +29,10 @@ func main() {
 	processor.RegisterKind(myTaskKind, &TaskHandler{}, pgqueue.Options{
 		Name:                     "my_processor",
 		WorkerCount:              10,
-		MaxAttempts:              3,
-		AttemptLimitSeconds:      5,
-		DelayAfterRefusedSeconds: 1,
+		MaxAttempts:              0,
+		AttemptLimitSeconds:      10,
+		DelayAfterRefusedSeconds: 5,
+		RepeatEndlessly:          true,
 	})
 	processorCtx, processorCancel := context.WithCancel(ctx)
 	processorDone, err := processor.Start(processorCtx)
