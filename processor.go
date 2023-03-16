@@ -219,7 +219,7 @@ func (qp *processor) AppendTaskWithOptions(ctx context.Context, kind int16, payl
 		useOpts = *opts
 	}
 
-	err := qp.storage.createTask(ctx, kind, useOpts.MaxAttempts, payload, useOpts.TTLSeconds, key, delay, opts.RepeatEndlessly)
+	err := qp.storage.createTask(ctx, kind, useOpts.MaxAttempts, payload, useOpts.TTLSeconds, key, delay, useOpts.RepeatEndlessly)
 	if err != nil {
 		return errors.Wrap(err, "storage.createTask error")
 	}
@@ -251,7 +251,7 @@ func (qp *processor) AppendTaskWithOptionsTx(ctx context.Context, tx sqlx.Tx, ki
 		useOpts = *opts
 	}
 
-	err := qp.storage.createTaskTx(ctx, tx, kind, useOpts.MaxAttempts, payload, useOpts.TTLSeconds, key, delay, opts.RepeatEndlessly)
+	err := qp.storage.createTaskTx(ctx, tx, kind, useOpts.MaxAttempts, payload, useOpts.TTLSeconds, key, delay, useOpts.RepeatEndlessly)
 	if err != nil {
 		return errors.Wrap(err, "storage.createTask error")
 	}
