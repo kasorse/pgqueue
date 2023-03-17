@@ -94,6 +94,10 @@ func (w *worker) processTask(
 		delay = getDelayByAttemptIndex(w.progressiveDelayAfterRefusedSeconds, delayIndex)
 	}
 
+	if task.RepeatPeriod != 0 {
+		delay = task.RepeatPeriod
+	}
+
 	startTime := time.Now()
 	err := wrapHandler(handler).HandleTask(handlerContext, task)
 	duration := time.Since(startTime)

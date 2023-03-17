@@ -55,14 +55,14 @@ type StorageMock struct {
 	beforecompleteTaskCounter uint64
 	completeTaskMock          mStorageMockcompleteTask
 
-	funccreateTask          func(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool) (err error)
-	inspectFunccreateTask   func(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool)
+	funccreateTask          func(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32) (err error)
+	inspectFunccreateTask   func(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32)
 	aftercreateTaskCounter  uint64
 	beforecreateTaskCounter uint64
 	createTaskMock          mStorageMockcreateTask
 
-	funccreateTaskTx          func(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool) (err error)
-	inspectFunccreateTaskTx   func(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool)
+	funccreateTaskTx          func(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32) (err error)
+	inspectFunccreateTaskTx   func(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32)
 	aftercreateTaskTxCounter  uint64
 	beforecreateTaskTxCounter uint64
 	createTaskTxMock          mStorageMockcreateTaskTx
@@ -1450,14 +1450,15 @@ type StorageMockcreateTaskExpectation struct {
 
 // StorageMockcreateTaskParams contains parameters of the storage.createTask
 type StorageMockcreateTaskParams struct {
-	ctx         context.Context
-	kind        int16
-	maxAttempts uint16
-	payload     []byte
-	ttlSeconds  uint32
-	key         string
-	delay       time.Duration
-	endlessly   bool
+	ctx          context.Context
+	kind         int16
+	maxAttempts  uint16
+	payload      []byte
+	ttlSeconds   uint32
+	key          string
+	delay        time.Duration
+	endlessly    bool
+	repeatPeriod uint32
 }
 
 // StorageMockcreateTaskResults contains results of the storage.createTask
@@ -1466,7 +1467,7 @@ type StorageMockcreateTaskResults struct {
 }
 
 // Expect sets up expected params for storage.createTask
-func (mmcreateTask *mStorageMockcreateTask) Expect(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool) *mStorageMockcreateTask {
+func (mmcreateTask *mStorageMockcreateTask) Expect(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32) *mStorageMockcreateTask {
 	if mmcreateTask.mock.funccreateTask != nil {
 		mmcreateTask.mock.t.Fatalf("StorageMock.createTask mock is already set by Set")
 	}
@@ -1475,7 +1476,7 @@ func (mmcreateTask *mStorageMockcreateTask) Expect(ctx context.Context, kind int
 		mmcreateTask.defaultExpectation = &StorageMockcreateTaskExpectation{}
 	}
 
-	mmcreateTask.defaultExpectation.params = &StorageMockcreateTaskParams{ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly}
+	mmcreateTask.defaultExpectation.params = &StorageMockcreateTaskParams{ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod}
 	for _, e := range mmcreateTask.expectations {
 		if minimock.Equal(e.params, mmcreateTask.defaultExpectation.params) {
 			mmcreateTask.mock.t.Fatalf("Expectation set by When has same params: %#v", *mmcreateTask.defaultExpectation.params)
@@ -1486,7 +1487,7 @@ func (mmcreateTask *mStorageMockcreateTask) Expect(ctx context.Context, kind int
 }
 
 // Inspect accepts an inspector function that has same arguments as the storage.createTask
-func (mmcreateTask *mStorageMockcreateTask) Inspect(f func(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool)) *mStorageMockcreateTask {
+func (mmcreateTask *mStorageMockcreateTask) Inspect(f func(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32)) *mStorageMockcreateTask {
 	if mmcreateTask.mock.inspectFunccreateTask != nil {
 		mmcreateTask.mock.t.Fatalf("Inspect function is already set for StorageMock.createTask")
 	}
@@ -1510,7 +1511,7 @@ func (mmcreateTask *mStorageMockcreateTask) Return(err error) *StorageMock {
 }
 
 // Set uses given function f to mock the storage.createTask method
-func (mmcreateTask *mStorageMockcreateTask) Set(f func(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool) (err error)) *StorageMock {
+func (mmcreateTask *mStorageMockcreateTask) Set(f func(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32) (err error)) *StorageMock {
 	if mmcreateTask.defaultExpectation != nil {
 		mmcreateTask.mock.t.Fatalf("Default expectation is already set for the storage.createTask method")
 	}
@@ -1525,14 +1526,14 @@ func (mmcreateTask *mStorageMockcreateTask) Set(f func(ctx context.Context, kind
 
 // When sets expectation for the storage.createTask which will trigger the result defined by the following
 // Then helper
-func (mmcreateTask *mStorageMockcreateTask) When(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool) *StorageMockcreateTaskExpectation {
+func (mmcreateTask *mStorageMockcreateTask) When(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32) *StorageMockcreateTaskExpectation {
 	if mmcreateTask.mock.funccreateTask != nil {
 		mmcreateTask.mock.t.Fatalf("StorageMock.createTask mock is already set by Set")
 	}
 
 	expectation := &StorageMockcreateTaskExpectation{
 		mock:   mmcreateTask.mock,
-		params: &StorageMockcreateTaskParams{ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly},
+		params: &StorageMockcreateTaskParams{ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod},
 	}
 	mmcreateTask.expectations = append(mmcreateTask.expectations, expectation)
 	return expectation
@@ -1545,15 +1546,15 @@ func (e *StorageMockcreateTaskExpectation) Then(err error) *StorageMock {
 }
 
 // createTask implements storage
-func (mmcreateTask *StorageMock) createTask(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool) (err error) {
+func (mmcreateTask *StorageMock) createTask(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32) (err error) {
 	mm_atomic.AddUint64(&mmcreateTask.beforecreateTaskCounter, 1)
 	defer mm_atomic.AddUint64(&mmcreateTask.aftercreateTaskCounter, 1)
 
 	if mmcreateTask.inspectFunccreateTask != nil {
-		mmcreateTask.inspectFunccreateTask(ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly)
+		mmcreateTask.inspectFunccreateTask(ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod)
 	}
 
-	mm_params := &StorageMockcreateTaskParams{ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly}
+	mm_params := &StorageMockcreateTaskParams{ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod}
 
 	// Record call args
 	mmcreateTask.createTaskMock.mutex.Lock()
@@ -1570,7 +1571,7 @@ func (mmcreateTask *StorageMock) createTask(ctx context.Context, kind int16, max
 	if mmcreateTask.createTaskMock.defaultExpectation != nil {
 		mm_atomic.AddUint64(&mmcreateTask.createTaskMock.defaultExpectation.Counter, 1)
 		mm_want := mmcreateTask.createTaskMock.defaultExpectation.params
-		mm_got := StorageMockcreateTaskParams{ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly}
+		mm_got := StorageMockcreateTaskParams{ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod}
 		if mm_want != nil && !minimock.Equal(*mm_want, mm_got) {
 			mmcreateTask.t.Errorf("StorageMock.createTask got unexpected parameters, want: %#v, got: %#v%s\n", *mm_want, mm_got, minimock.Diff(*mm_want, mm_got))
 		}
@@ -1582,9 +1583,9 @@ func (mmcreateTask *StorageMock) createTask(ctx context.Context, kind int16, max
 		return (*mm_results).err
 	}
 	if mmcreateTask.funccreateTask != nil {
-		return mmcreateTask.funccreateTask(ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly)
+		return mmcreateTask.funccreateTask(ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod)
 	}
-	mmcreateTask.t.Fatalf("Unexpected call to StorageMock.createTask. %v %v %v %v %v %v %v %v", ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly)
+	mmcreateTask.t.Fatalf("Unexpected call to StorageMock.createTask. %v %v %v %v %v %v %v %v %v", ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod)
 	return
 }
 
@@ -1672,15 +1673,16 @@ type StorageMockcreateTaskTxExpectation struct {
 
 // StorageMockcreateTaskTxParams contains parameters of the storage.createTaskTx
 type StorageMockcreateTaskTxParams struct {
-	ctx         context.Context
-	tx          sqlx.Tx
-	kind        int16
-	maxAttempts uint16
-	payload     []byte
-	ttlSeconds  uint32
-	key         string
-	delay       time.Duration
-	endlessly   bool
+	ctx          context.Context
+	tx           sqlx.Tx
+	kind         int16
+	maxAttempts  uint16
+	payload      []byte
+	ttlSeconds   uint32
+	key          string
+	delay        time.Duration
+	endlessly    bool
+	repeatPeriod uint32
 }
 
 // StorageMockcreateTaskTxResults contains results of the storage.createTaskTx
@@ -1689,7 +1691,7 @@ type StorageMockcreateTaskTxResults struct {
 }
 
 // Expect sets up expected params for storage.createTaskTx
-func (mmcreateTaskTx *mStorageMockcreateTaskTx) Expect(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool) *mStorageMockcreateTaskTx {
+func (mmcreateTaskTx *mStorageMockcreateTaskTx) Expect(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32) *mStorageMockcreateTaskTx {
 	if mmcreateTaskTx.mock.funccreateTaskTx != nil {
 		mmcreateTaskTx.mock.t.Fatalf("StorageMock.createTaskTx mock is already set by Set")
 	}
@@ -1698,7 +1700,7 @@ func (mmcreateTaskTx *mStorageMockcreateTaskTx) Expect(ctx context.Context, tx s
 		mmcreateTaskTx.defaultExpectation = &StorageMockcreateTaskTxExpectation{}
 	}
 
-	mmcreateTaskTx.defaultExpectation.params = &StorageMockcreateTaskTxParams{ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly}
+	mmcreateTaskTx.defaultExpectation.params = &StorageMockcreateTaskTxParams{ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod}
 	for _, e := range mmcreateTaskTx.expectations {
 		if minimock.Equal(e.params, mmcreateTaskTx.defaultExpectation.params) {
 			mmcreateTaskTx.mock.t.Fatalf("Expectation set by When has same params: %#v", *mmcreateTaskTx.defaultExpectation.params)
@@ -1709,7 +1711,7 @@ func (mmcreateTaskTx *mStorageMockcreateTaskTx) Expect(ctx context.Context, tx s
 }
 
 // Inspect accepts an inspector function that has same arguments as the storage.createTaskTx
-func (mmcreateTaskTx *mStorageMockcreateTaskTx) Inspect(f func(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool)) *mStorageMockcreateTaskTx {
+func (mmcreateTaskTx *mStorageMockcreateTaskTx) Inspect(f func(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32)) *mStorageMockcreateTaskTx {
 	if mmcreateTaskTx.mock.inspectFunccreateTaskTx != nil {
 		mmcreateTaskTx.mock.t.Fatalf("Inspect function is already set for StorageMock.createTaskTx")
 	}
@@ -1733,7 +1735,7 @@ func (mmcreateTaskTx *mStorageMockcreateTaskTx) Return(err error) *StorageMock {
 }
 
 // Set uses given function f to mock the storage.createTaskTx method
-func (mmcreateTaskTx *mStorageMockcreateTaskTx) Set(f func(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool) (err error)) *StorageMock {
+func (mmcreateTaskTx *mStorageMockcreateTaskTx) Set(f func(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32) (err error)) *StorageMock {
 	if mmcreateTaskTx.defaultExpectation != nil {
 		mmcreateTaskTx.mock.t.Fatalf("Default expectation is already set for the storage.createTaskTx method")
 	}
@@ -1748,14 +1750,14 @@ func (mmcreateTaskTx *mStorageMockcreateTaskTx) Set(f func(ctx context.Context, 
 
 // When sets expectation for the storage.createTaskTx which will trigger the result defined by the following
 // Then helper
-func (mmcreateTaskTx *mStorageMockcreateTaskTx) When(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool) *StorageMockcreateTaskTxExpectation {
+func (mmcreateTaskTx *mStorageMockcreateTaskTx) When(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32) *StorageMockcreateTaskTxExpectation {
 	if mmcreateTaskTx.mock.funccreateTaskTx != nil {
 		mmcreateTaskTx.mock.t.Fatalf("StorageMock.createTaskTx mock is already set by Set")
 	}
 
 	expectation := &StorageMockcreateTaskTxExpectation{
 		mock:   mmcreateTaskTx.mock,
-		params: &StorageMockcreateTaskTxParams{ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly},
+		params: &StorageMockcreateTaskTxParams{ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod},
 	}
 	mmcreateTaskTx.expectations = append(mmcreateTaskTx.expectations, expectation)
 	return expectation
@@ -1768,15 +1770,15 @@ func (e *StorageMockcreateTaskTxExpectation) Then(err error) *StorageMock {
 }
 
 // createTaskTx implements storage
-func (mmcreateTaskTx *StorageMock) createTaskTx(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool) (err error) {
+func (mmcreateTaskTx *StorageMock) createTaskTx(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32) (err error) {
 	mm_atomic.AddUint64(&mmcreateTaskTx.beforecreateTaskTxCounter, 1)
 	defer mm_atomic.AddUint64(&mmcreateTaskTx.aftercreateTaskTxCounter, 1)
 
 	if mmcreateTaskTx.inspectFunccreateTaskTx != nil {
-		mmcreateTaskTx.inspectFunccreateTaskTx(ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly)
+		mmcreateTaskTx.inspectFunccreateTaskTx(ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod)
 	}
 
-	mm_params := &StorageMockcreateTaskTxParams{ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly}
+	mm_params := &StorageMockcreateTaskTxParams{ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod}
 
 	// Record call args
 	mmcreateTaskTx.createTaskTxMock.mutex.Lock()
@@ -1793,7 +1795,7 @@ func (mmcreateTaskTx *StorageMock) createTaskTx(ctx context.Context, tx sqlx.Tx,
 	if mmcreateTaskTx.createTaskTxMock.defaultExpectation != nil {
 		mm_atomic.AddUint64(&mmcreateTaskTx.createTaskTxMock.defaultExpectation.Counter, 1)
 		mm_want := mmcreateTaskTx.createTaskTxMock.defaultExpectation.params
-		mm_got := StorageMockcreateTaskTxParams{ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly}
+		mm_got := StorageMockcreateTaskTxParams{ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod}
 		if mm_want != nil && !minimock.Equal(*mm_want, mm_got) {
 			mmcreateTaskTx.t.Errorf("StorageMock.createTaskTx got unexpected parameters, want: %#v, got: %#v%s\n", *mm_want, mm_got, minimock.Diff(*mm_want, mm_got))
 		}
@@ -1805,9 +1807,9 @@ func (mmcreateTaskTx *StorageMock) createTaskTx(ctx context.Context, tx sqlx.Tx,
 		return (*mm_results).err
 	}
 	if mmcreateTaskTx.funccreateTaskTx != nil {
-		return mmcreateTaskTx.funccreateTaskTx(ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly)
+		return mmcreateTaskTx.funccreateTaskTx(ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod)
 	}
-	mmcreateTaskTx.t.Fatalf("Unexpected call to StorageMock.createTaskTx. %v %v %v %v %v %v %v %v %v", ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly)
+	mmcreateTaskTx.t.Fatalf("Unexpected call to StorageMock.createTaskTx. %v %v %v %v %v %v %v %v %v %v", ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod)
 	return
 }
 

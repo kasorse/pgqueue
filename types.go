@@ -11,8 +11,9 @@ const (
 	defaultWorkerCount uint16 = 1
 	defaultMaxAttempts uint16 = 1
 
-	emptyKey     string        = ""
-	zeroDuration time.Duration = 0
+	emptyKey         string        = ""
+	zeroDuration     time.Duration = 0
+	zeroRepeatPeriod uint32        = 0
 )
 
 var (
@@ -32,4 +33,6 @@ type AppendTaskOptions struct {
 	ExternalKey string
 	// Delay in taking the task to work.
 	Delay time.Duration
+	// Period in seconds in which task will be retried
+	RepeatPeriod uint32
 }

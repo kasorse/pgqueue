@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx"
 	"github.com/jmoiron/sqlx"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -211,13 +212,11 @@ func (s *TestAppendTaskWithKeySuite) TestCancel() {
 	err1 := s.qp.AppendTaskWithOptions(ctx, s.taskKind, []byte("{}"), nil, &AppendTaskOptions{ExternalKey: keyToCancel, Delay: time.Second * 2})
 	err2 := s.qp.AppendTaskWithOptions(ctx, s.taskKind, []byte("{}"), nil, &AppendTaskOptions{ExternalKey: keyToCancel, Delay: time.Second * 2})
 	err3 := s.qp.AppendTaskWithOptions(ctx, s.taskKind, []byte("{}"), nil, &AppendTaskOptions{ExternalKey: keyToContinue, Delay: time.Second * 2})
-	err4 := s.qp.AppendTaskWithOptions(ctx, s.taskKind, []byte("{}"), nil, &AppendTaskOptions{ExternalKey: keyToContinue, Delay: time.Second * 2})
 	s.NoError(err1)
-	s.NoError(err2)
+	s.Equal("23505", errors.Unwrap(errors.Unwrap(err2)).(pgx.PgError).Code)
 	s.NoError(err3)
-	s.NoError(err4)
 
-	expectedCallsAmount := 2
+	expectedCallsAmount := 1
 
 	// act
 	err := s.qp.CancelTaskByKey(ctx, s.taskKind, keyToCancel)

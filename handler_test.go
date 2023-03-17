@@ -65,7 +65,7 @@ func (th *testHandler) HandleTask(ctx context.Context, task *Task) error {
 	if task == nil {
 		th.t.Fatal("cannot continue test, bad task")
 	}
-	logger.Infof(context.Background(), "handle task with payload %v", task.Payload)
+	logger.Infof(context.Background(), "handle task with payload %s", task.Payload)
 
 	payload := new(testPayload)
 	if err := json.Unmarshal(task.Payload, &payload); err != nil {

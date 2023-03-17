@@ -8,6 +8,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/kasorse/pgqueue/internal/logger"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -22,6 +23,7 @@ type Task struct {
 	Payload      []byte
 	attemptsLeft uint16
 	ExternalKey  string
+	RepeatPeriod uint32
 }
 
 // IsLastAttempt returns true, if it's a last try
@@ -76,8 +78,8 @@ type kindDescription struct {
 }
 
 type storage interface {
-	createTask(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool) error
-	createTaskTx(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool) error
+	createTask(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32) error
+	createTaskTx(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32) error
 	getTasks(ctx context.Context, kind int16, workerCountLimitForInstance uint16, workerCountLimitForQueueKind uint16) ([]*Task, error)
 	completeTask(ctx context.Context, id int64, delaySeconds uint32) error
 	refuseTask(ctx context.Context, id int64, reason string, delaySeconds uint32) error
@@ -143,6 +145,10 @@ func setDefaultsForOptions(opts *Options) {
 	}
 }
 
+func (qp *processor) SetJSONLogFormat() {
+	logrus.SetFormatter(&logrus.JSONFormatter{})
+}
+
 // Start starts the task loop and returns a channel that closes when the loop stops.
 // The loop continues until the context is closed.
 func (qp *processor) Start(ctx context.Context) (<-chan struct{}, error) {
@@ -161,7 +167,7 @@ func (qp *processor) AppendTask(ctx context.Context, kind int16, payload []byte)
 		return ErrUnexpectedTaskKind
 	}
 
-	err := qp.storage.createTask(ctx, kind, kindData.opts.MaxAttempts, payload, kindData.opts.TTLSeconds, emptyKey, zeroDuration, kindData.opts.RepeatEndlessly)
+	err := qp.storage.createTask(ctx, kind, kindData.opts.MaxAttempts, payload, kindData.opts.TTLSeconds, emptyKey, zeroDuration, kindData.opts.RepeatEndlessly, zeroRepeatPeriod)
 	if err != nil {
 		return errors.Wrap(err, "storage.createTask error")
 	}
@@ -176,7 +182,7 @@ func (qp *processor) AppendTaskTx(ctx context.Context, tx sqlx.Tx, kind int16, p
 		return ErrUnexpectedTaskKind
 	}
 
-	err := qp.storage.createTaskTx(ctx, tx, kind, kindData.opts.MaxAttempts, payload, kindData.opts.TTLSeconds, emptyKey, zeroDuration, kindData.opts.RepeatEndlessly)
+	err := qp.storage.createTaskTx(ctx, tx, kind, kindData.opts.MaxAttempts, payload, kindData.opts.TTLSeconds, emptyKey, zeroDuration, kindData.opts.RepeatEndlessly, zeroRepeatPeriod)
 	if err != nil {
 		return errors.Wrap(err, "storage.createTaskTx error")
 	}
@@ -205,12 +211,16 @@ func (qp *processor) AppendTaskWithOptions(ctx context.Context, kind int16, payl
 
 	key := emptyKey
 	delay := zeroDuration
+	repeatPeriod := zeroRepeatPeriod
 	if appendOpts != nil {
 		if appendOpts.ExternalKey != "" {
 			key = appendOpts.ExternalKey
 		}
 		if appendOpts.Delay != 0 {
 			delay = appendOpts.Delay
+		}
+		if appendOpts.RepeatPeriod != 0 {
+			repeatPeriod = appendOpts.RepeatPeriod
 		}
 	}
 
@@ -219,7 +229,7 @@ func (qp *processor) AppendTaskWithOptions(ctx context.Context, kind int16, payl
 		useOpts = *opts
 	}
 
-	err := qp.storage.createTask(ctx, kind, useOpts.MaxAttempts, payload, useOpts.TTLSeconds, key, delay, useOpts.RepeatEndlessly)
+	err := qp.storage.createTask(ctx, kind, useOpts.MaxAttempts, payload, useOpts.TTLSeconds, key, delay, useOpts.RepeatEndlessly, repeatPeriod)
 	if err != nil {
 		return errors.Wrap(err, "storage.createTask error")
 	}
@@ -237,12 +247,16 @@ func (qp *processor) AppendTaskWithOptionsTx(ctx context.Context, tx sqlx.Tx, ki
 
 	key := emptyKey
 	delay := zeroDuration
+	repeatPeriod := zeroRepeatPeriod
 	if appendOpts != nil {
 		if appendOpts.ExternalKey != "" {
 			key = appendOpts.ExternalKey
 		}
 		if appendOpts.Delay != 0 {
 			delay = appendOpts.Delay
+		}
+		if appendOpts.RepeatPeriod != 0 {
+			repeatPeriod = appendOpts.RepeatPeriod
 		}
 	}
 
@@ -251,7 +265,7 @@ func (qp *processor) AppendTaskWithOptionsTx(ctx context.Context, tx sqlx.Tx, ki
 		useOpts = *opts
 	}
 
-	err := qp.storage.createTaskTx(ctx, tx, kind, useOpts.MaxAttempts, payload, useOpts.TTLSeconds, key, delay, useOpts.RepeatEndlessly)
+	err := qp.storage.createTaskTx(ctx, tx, kind, useOpts.MaxAttempts, payload, useOpts.TTLSeconds, key, delay, useOpts.RepeatEndlessly, repeatPeriod)
 	if err != nil {
 		return errors.Wrap(err, "storage.createTask error")
 	}

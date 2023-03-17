@@ -46,7 +46,8 @@ CREATE TABLE queue
     delayed_till  timestamp without time zone           DEFAULT now()            NOT NULL,
     expires_at    timestamp without time zone                                    NOT NULL,
     messages      text[]                                DEFAULT ARRAY []::text[] NOT NULL,
-    external_key  text
+    external_key  text,
+    repeat_period int check (repeat_period >= 0)
 );
 
 COMMENT ON COLUMN queue.status IS '0: never processed, 1: must try one or more attempts, 2: now in processing, >50: closed for any reasons';

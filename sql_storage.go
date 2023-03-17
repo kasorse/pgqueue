@@ -52,11 +52,11 @@ func rollbackTx(ctx context.Context, tx *sqlx.Tx) {
 }
 
 func (s *sqlStorage) createTask(ctx context.Context, kind int16, maxAttempts uint16, payload []byte,
-	ttlSeconds uint32, externalKey string, delay time.Duration, endlessly bool) error {
+	ttlSeconds uint32, externalKey string, delay time.Duration, endlessly bool, repeatPeriod uint32) error {
 
 	insertQuery := `
-		INSERT INTO public.queue (kind, attempts_left, endlessly, payload, expires_at, external_key, delayed_till)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO public.queue (kind, attempts_left, endlessly, payload, expires_at, external_key, delayed_till, repeat_period)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`
 
 	delayedTill := time.Now().Add(delay)
@@ -67,15 +67,21 @@ func (s *sqlStorage) createTask(ctx context.Context, kind int16, maxAttempts uin
 		nullableExternalKey = &externalKey
 	}
 
-	_, err := s.db.ExecContext(ctx, insertQuery, kind, maxAttempts, endlessly, string(payload), expiresAt, nullableExternalKey, delayedTill)
+	var nullableRepeatPeriod sql.NullInt32
+	if repeatPeriod != 0 {
+		nullableRepeatPeriod.Valid = true
+		nullableRepeatPeriod.Int32 = int32(repeatPeriod)
+	}
+
+	_, err := s.db.ExecContext(ctx, insertQuery, kind, maxAttempts, endlessly, string(payload), expiresAt, nullableExternalKey, delayedTill, nullableRepeatPeriod)
 	return err
 }
 
 func (s *sqlStorage) createTaskTx(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte,
-	ttlSeconds uint32, externalKey string, delay time.Duration, endlessly bool) error {
+	ttlSeconds uint32, externalKey string, delay time.Duration, endlessly bool, repeatPeriod uint32) error {
 	insertQuery := `
-	INSERT INTO public.queue (kind, attempts_left, endlessly, payload, expires_at, external_key, delayed_till)
-	VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO public.queue (kind, attempts_left, endlessly, payload, expires_at, external_key, delayed_till, repeat_period)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 `
 
 	delayedTill := time.Now().Add(delay)
@@ -86,7 +92,13 @@ func (s *sqlStorage) createTaskTx(ctx context.Context, tx sqlx.Tx, kind int16, m
 		nullableExternalKey = &externalKey
 	}
 
-	_, err := tx.ExecContext(ctx, insertQuery, kind, maxAttempts, endlessly, string(payload), expiresAt, nullableExternalKey, delayedTill)
+	var nullableRepeatPeriod sql.NullInt32
+	if repeatPeriod != 0 {
+		nullableRepeatPeriod.Valid = true
+		nullableRepeatPeriod.Int32 = int32(repeatPeriod)
+	}
+
+	_, err := tx.ExecContext(ctx, insertQuery, kind, maxAttempts, endlessly, string(payload), expiresAt, nullableExternalKey, delayedTill, nullableRepeatPeriod)
 	return err
 }
 
@@ -118,7 +130,7 @@ func (s *sqlStorage) getTasks(ctx context.Context, kind int16, workerCountLimitF
 			LIMIT $3
 			FOR UPDATE SKIP LOCKED
 		)
-		RETURNING id, kind, attempts_left, payload, external_key
+		RETURNING id, kind, attempts_left, payload, external_key, repeat_period
 	`
 	var dbTasks []*dbTask
 
@@ -357,6 +369,7 @@ type dbTask struct {
 	AttemptsLeft uint16         `db:"attempts_left"`
 	Payload      []byte         `db:"payload"`
 	ExternalKey  sql.NullString `db:"external_key"`
+	RepeatPeriod sql.NullInt32  `db:"repeat_period"`
 }
 
 func fromDBTask(t *dbTask) *Task {
@@ -369,6 +382,7 @@ func fromDBTask(t *dbTask) *Task {
 		Payload:      t.Payload,
 		attemptsLeft: t.AttemptsLeft,
 		ExternalKey:  t.ExternalKey.String,
+		RepeatPeriod: uint32(t.RepeatPeriod.Int32),
 	}
 }
 
