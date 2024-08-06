@@ -185,7 +185,7 @@ func (s *sqlStorage) completeTask(ctx context.Context, id int64, delaySeconds ui
 			status = CASE WHEN not endlessly THEN $2::smallint ELSE $4::smallint END,
 			updated = $3,
 			delayed_till = $5
-		WHERE id = $1
+		WHERE id = $1 and status = $6::smallint
 	`
 
 	now := time.Now()
@@ -194,11 +194,12 @@ func (s *sqlStorage) completeTask(ctx context.Context, id int64, delaySeconds ui
 	_, err := s.db.ExecContext(
 		ctx,
 		updateQuery,
-		id,                   // $1
-		status.ClosedSuccess, // $2
-		time.Now(),           // $3
-		status.OpenMustRetry, // $4
-		delayedTill,          // $5
+		id,                    // $1
+		status.ClosedSuccess,  // $2
+		time.Now(),            // $3
+		status.OpenMustRetry,  // $4
+		delayedTill,           // $5
+		status.OpenProcessing, // $6
 	)
 	return err
 }
