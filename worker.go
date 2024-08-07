@@ -74,6 +74,10 @@ func (w *worker) processTask(
 	handler TaskHandler,
 	task *Task,
 ) {
+	if task == nil {
+		logger.Errorf(parentCtx, "nil task on handling worker [%s]", w.processorName)
+		return
+	}
 	w.metricsCollector.IncBusyWorkers(w.processorName, task.Kind)
 	defer w.metricsCollector.DecBusyWorkers(w.processorName, task.Kind)
 
