@@ -55,8 +55,15 @@ func (s *sqlStorage) createTask(ctx context.Context, kind int16, maxAttempts uin
 	ttlSeconds uint32, externalKey string, delay time.Duration, endlessly bool, repeatPeriod uint32) error {
 
 	insertQuery := `
-		INSERT INTO public.queue (kind, attempts_left, endlessly, payload, expires_at, external_key, delayed_till, repeat_period)
+		INSERT INTO public.queue (kind, attempts_left, endlessly, payload, expires_at, external_key, delayed_till,
+				repeat_period)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (kind, external_key) WHERE status <= 3 do update set attempts_left=excluded.attempts_left,
+									payload=excluded.payload,
+									endlessly=excluded.endlessly,
+									repeat_period=excluded.repeat_period,
+									updated=current_timestamp
+		where queue.endlessly
 	`
 
 	delayedTill := time.Now().Add(delay)
@@ -80,8 +87,15 @@ func (s *sqlStorage) createTask(ctx context.Context, kind int16, maxAttempts uin
 func (s *sqlStorage) createTaskTx(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte,
 	ttlSeconds uint32, externalKey string, delay time.Duration, endlessly bool, repeatPeriod uint32) error {
 	insertQuery := `
-		INSERT INTO public.queue (kind, attempts_left, endlessly, payload, expires_at, external_key, delayed_till, repeat_period)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	INSERT INTO public.queue (kind, attempts_left, endlessly, payload, expires_at, external_key, delayed_till,
+			repeat_period)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	ON CONFLICT (kind, external_key) WHERE status <= 3 do update set attempts_left=excluded.attempts_left,
+								payload=excluded.payload,
+								endlessly=excluded.endlessly,
+								repeat_period=excluded.repeat_period,
+								updated=current_timestamp
+	where queue.endlessly
 `
 
 	delayedTill := time.Now().Add(delay)
@@ -98,8 +112,14 @@ func (s *sqlStorage) createTaskTx(ctx context.Context, tx sqlx.Tx, kind int16, m
 		nullableRepeatPeriod.Int32 = int32(repeatPeriod)
 	}
 
-	_, err := tx.ExecContext(ctx, insertQuery, kind, maxAttempts, endlessly, string(payload), expiresAt, nullableExternalKey, delayedTill, nullableRepeatPeriod)
-	return err
+	res, err := tx.ExecContext(ctx, insertQuery, kind, maxAttempts, endlessly, string(payload), expiresAt, nullableExternalKey, delayedTill, nullableRepeatPeriod)
+	if err != nil {
+		return err
+	}
+	if c, err := res.RowsAffected(); err == nil && c == 0 {
+		logger.Errorf(ctx, "no affected rows on insert", "kind", kind, "key", externalKey)
+	}
+	return nil
 }
 
 func (s *sqlStorage) getTasks(ctx context.Context, kind int16, workerCountLimitForInstance uint16, workerCountLimitForQueueKind uint16) ([]*Task, error) {
