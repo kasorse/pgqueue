@@ -322,8 +322,8 @@ func (qp *processor) runWorkerPool(ctx context.Context, monitor workerMonitor, t
 func (qp *processor) runTaskFetcher(ctx context.Context, monitor workerMonitor, tasks chan<- *Task, kind int16, opts Options) {
 	attemptLimit := time.Duration(opts.AttemptLimitSeconds) * time.Second
 
-	logger.Warnf(ctx, "%s: enter task processing loop (kind=%d attempt_limit=%v worker_count=%v)", opts.Name, kind, attemptLimit, opts.WorkerCount)
-	defer logger.Warnf(ctx, "%s: escape task processing loop", opts.Name)
+	logger.Debugf(ctx, "%s: enter task processing loop (kind=%d attempt_limit=%v worker_count=%v)", opts.Name, kind, attemptLimit, opts.WorkerCount)
+	defer logger.Debugf(ctx, "%s: escape task processing loop", opts.Name)
 
 	ticker := time.NewTicker(taskFetcherTickerInterval)
 	defer ticker.Stop()
@@ -333,7 +333,7 @@ func (qp *processor) runTaskFetcher(ctx context.Context, monitor workerMonitor, 
 		case <-ticker.C:
 			restingWorkerCount := monitor.getRestingCount()
 			if restingWorkerCount == 0 {
-				logger.Infof(ctx, "%s: runTaskFetcher: no resting workers", opts.Name)
+				logger.Debugf(ctx, "%s: runTaskFetcher: no resting workers", opts.Name)
 				break // select
 			}
 

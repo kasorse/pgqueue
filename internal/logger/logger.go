@@ -48,6 +48,12 @@ func Warnf(ctx context.Context, format string, args ...interface{}) {
 	log.Warnf(prefix+format, args...)
 }
 
+// Debugf implements logging with meta information support
+func Debugf(ctx context.Context, format string, args ...interface{}) {
+	prefix := getPrefix(ctx)
+	log.Debugf(prefix+format, args...)
+}
+
 // Errorf implements logging with meta information support
 func Errorf(ctx context.Context, format string, args ...interface{}) {
 	prefix := getPrefix(ctx)
