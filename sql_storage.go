@@ -63,7 +63,7 @@ func (s *sqlStorage) createTask(ctx context.Context, kind int16, maxAttempts uin
 									endlessly=excluded.endlessly,
 									repeat_period=excluded.repeat_period,
 									updated=current_timestamp
-		where queue.endlessly
+		where queue.endlessly and queue.status != $9
 	`
 
 	delayedTill := time.Now().Add(delay)
@@ -80,7 +80,7 @@ func (s *sqlStorage) createTask(ctx context.Context, kind int16, maxAttempts uin
 		nullableRepeatPeriod.Int32 = int32(repeatPeriod)
 	}
 
-	_, err := s.db.ExecContext(ctx, insertQuery, kind, maxAttempts, endlessly, string(payload), expiresAt, nullableExternalKey, delayedTill, nullableRepeatPeriod)
+	_, err := s.db.ExecContext(ctx, insertQuery, kind, maxAttempts, endlessly, string(payload), expiresAt, nullableExternalKey, delayedTill, nullableRepeatPeriod, status.OpenProcessing)
 	return err
 }
 
@@ -95,7 +95,7 @@ func (s *sqlStorage) createTaskTx(ctx context.Context, tx sqlx.Tx, kind int16, m
 								endlessly=excluded.endlessly,
 								repeat_period=excluded.repeat_period,
 								updated=current_timestamp
-	where queue.endlessly
+	where queue.endlessly and queue.status != $9
 `
 
 	delayedTill := time.Now().Add(delay)
@@ -112,7 +112,17 @@ func (s *sqlStorage) createTaskTx(ctx context.Context, tx sqlx.Tx, kind int16, m
 		nullableRepeatPeriod.Int32 = int32(repeatPeriod)
 	}
 
-	res, err := tx.ExecContext(ctx, insertQuery, kind, maxAttempts, endlessly, string(payload), expiresAt, nullableExternalKey, delayedTill, nullableRepeatPeriod)
+	res, err := tx.ExecContext(ctx, insertQuery,
+		kind,                  // $1
+		maxAttempts,           // $2
+		endlessly,             // $3
+		string(payload),       // $4
+		expiresAt,             // $5
+		nullableExternalKey,   // $6
+		delayedTill,           // $7
+		nullableRepeatPeriod,  // $8
+		status.OpenProcessing, // $9
+	)
 	if err != nil {
 		return err
 	}

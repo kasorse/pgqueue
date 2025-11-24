@@ -11,6 +11,26 @@ type contextKeyType string
 // contextKey is the key to set and get LogPrefixer instance into context
 const contextKey contextKeyType = "__logprefixer"
 
+type LogLevel int
+
+const (
+	LogInfoLevel LogLevel = 4
+	LogWarnLevel LogLevel = 3
+	LogErrLevel  LogLevel = 2
+)
+
+var (
+	client = log.New()
+)
+
+func SetLevel(level LogLevel) {
+	client.SetLevel(log.Level(level))
+}
+
+func SetJSONFormatter() {
+	client.SetFormatter(&log.JSONFormatter{})
+}
+
 // WrapContext returns new context with meta information support
 func WrapContext(ctx context.Context, prologue string) context.Context {
 	lp := newLogPrefixer().setPrologue(prologue)
@@ -39,29 +59,29 @@ func getPrefix(ctx context.Context) string {
 // Infof implements logging with meta information support
 func Infof(ctx context.Context, format string, args ...interface{}) {
 	prefix := getPrefix(ctx)
-	log.Infof(prefix+format, args...)
+	client.Infof(prefix+format, args...)
 }
 
 // Warnf implements logging with meta information support
 func Warnf(ctx context.Context, format string, args ...interface{}) {
 	prefix := getPrefix(ctx)
-	log.Warnf(prefix+format, args...)
+	client.Warnf(prefix+format, args...)
 }
 
 // Debugf implements logging with meta information support
 func Debugf(ctx context.Context, format string, args ...interface{}) {
 	prefix := getPrefix(ctx)
-	log.Debugf(prefix+format, args...)
+	client.Debugf(prefix+format, args...)
 }
 
 // Errorf implements logging with meta information support
 func Errorf(ctx context.Context, format string, args ...interface{}) {
 	prefix := getPrefix(ctx)
-	log.Errorf(prefix+format, args...)
+	client.Errorf(prefix+format, args...)
 }
 
 // Fatalf implements logging with meta information support
 func Fatalf(ctx context.Context, format string, args ...interface{}) {
 	prefix := getPrefix(ctx)
-	log.Fatalf(prefix+format, args...)
+	client.Fatalf(prefix+format, args...)
 }
