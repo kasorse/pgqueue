@@ -40,7 +40,8 @@ type AppendTaskOptions struct {
 type LogLevel int
 
 const (
-	LogInfoLevel LogLevel = 4
-	LogWarnLevel LogLevel = 3
-	LogErrLevel  LogLevel = 2
+	LogDebugLevel LogLevel = 5
+	LogInfoLevel  LogLevel = 4
+	LogWarnLevel  LogLevel = 3
+	LogErrLevel   LogLevel = 2
 )
