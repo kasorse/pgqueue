@@ -11,20 +11,12 @@ type contextKeyType string
 // contextKey is the key to set and get LogPrefixer instance into context
 const contextKey contextKeyType = "__logprefixer"
 
-type LogLevel int
-
-const (
-	LogInfoLevel LogLevel = 4
-	LogWarnLevel LogLevel = 3
-	LogErrLevel  LogLevel = 2
-)
-
 var (
 	client = log.New()
 )
 
-func SetLevel(level LogLevel) {
-	client.SetLevel(log.Level(level))
+func SetLevel(level log.Level) {
+	client.SetLevel(level)
 }
 
 func SetJSONFormatter() {

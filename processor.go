@@ -8,6 +8,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/kasorse/pgqueue/internal/logger"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -148,8 +149,8 @@ func (qp *processor) SetJSONLogFormat() {
 	logger.SetJSONFormatter()
 }
 
-func (qp *processor) SetLogLevel(level logger.LogLevel) {
-	logger.SetLevel(level)
+func (qp *processor) SetLogLevel(level LogLevel) {
+	logger.SetLevel(logrus.Level(level))
 }
 
 // Start starts the task loop and returns a channel that closes when the loop stops.

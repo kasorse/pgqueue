@@ -36,3 +36,11 @@ type AppendTaskOptions struct {
 	// Period in seconds in which task will be retried
 	RepeatPeriod uint32
 }
+
+type LogLevel int
+
+const (
+	LogInfoLevel LogLevel = 4
+	LogWarnLevel LogLevel = 3
+	LogErrLevel  LogLevel = 2
+)
