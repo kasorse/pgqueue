@@ -39,13 +39,15 @@ CREATE TABLE queue
     kind          smallint                                                       NOT NULL,
     status        smallint REFERENCES queue_status (id) DEFAULT 0                NOT NULL,
     attempts_left smallint                              DEFAULT 1                NOT NULL,
+    endlessly     bool                                  DEFAULT false            NOT NULL,
     payload       jsonb                                                          NOT NULL,
     created       timestamp without time zone           DEFAULT now()            NOT NULL,
     updated       timestamp without time zone           DEFAULT now()            NOT NULL,
     delayed_till  timestamp without time zone           DEFAULT now()            NOT NULL,
     expires_at    timestamp without time zone                                    NOT NULL,
     messages      text[]                                DEFAULT ARRAY []::text[] NOT NULL,
-    external_key  text
+    external_key  text,
+    repeat_period int check (repeat_period >= 0)
 );
 
 COMMENT ON COLUMN queue.status IS '0: never processed, 1: must try one or more attempts, 2: now in processing, >50: closed for any reasons';
@@ -63,6 +65,8 @@ CREATE INDEX queue_kind_status_delayed_till_attempts_left_idx ON queue USING btr
 CREATE INDEX queue_kind_status_expires_at_idx ON queue USING btree (kind, status, expires_at);
 --nolint:require-concurrent-index-creation
 CREATE INDEX queue_kind_status_updated_idx ON queue USING btree (kind, status, updated);
+--nolint:require-concurrent-index-creation
+CREATE UNIQUE INDEX queue_kind_external_key_uidx ON queue (kind, external_key) where status <= 3;
 
 CREATE VIEW queue_tasks_board AS
 SELECT q.id,
@@ -70,6 +74,7 @@ SELECT q.id,
        q.status AS status_code,
        s.name   AS status_desc,
        q.attempts_left,
+       q.endlessly,
        q.payload,
        q.created,
        q.updated,

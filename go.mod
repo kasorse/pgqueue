@@ -6,8 +6,8 @@ require (
 	github.com/gojuno/minimock/v3 v3.0.10
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/jmoiron/sqlx v1.3.4
-	github.com/lib/pq v1.2.0
 	github.com/pkg/errors v0.9.1
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/sirupsen/logrus v1.9.0
 	github.com/stretchr/testify v1.7.0
 )

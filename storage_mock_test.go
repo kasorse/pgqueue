@@ -49,23 +49,29 @@ type StorageMock struct {
 	beforecloseExpiredTasksCounter uint64
 	closeExpiredTasksMock          mStorageMockcloseExpiredTasks
 
-	funccompleteTask          func(ctx context.Context, id int64, delaySeconds uint32) (err error)
-	inspectFunccompleteTask   func(ctx context.Context, id int64, delaySeconds uint32)
+	funccompleteTask          func(ctx context.Context, id int64) (err error)
+	inspectFunccompleteTask   func(ctx context.Context, id int64)
 	aftercompleteTaskCounter  uint64
 	beforecompleteTaskCounter uint64
 	completeTaskMock          mStorageMockcompleteTask
 
-	funccreateTask          func(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32) (err error)
-	inspectFunccreateTask   func(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32)
+	funccreateTask          func(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, repeatPeriod uint32) (err error)
+	inspectFunccreateTask   func(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, repeatPeriod uint32)
 	aftercreateTaskCounter  uint64
 	beforecreateTaskCounter uint64
 	createTaskMock          mStorageMockcreateTask
 
-	funccreateTaskTx          func(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32) (err error)
-	inspectFunccreateTaskTx   func(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32)
+	funccreateTaskTx          func(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, repeatPeriod uint32) (err error)
+	inspectFunccreateTaskTx   func(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, repeatPeriod uint32)
 	aftercreateTaskTxCounter  uint64
 	beforecreateTaskTxCounter uint64
 	createTaskTxMock          mStorageMockcreateTaskTx
+
+	funcdeleteSchedule          func(ctx context.Context, kind int16, name string) (err error)
+	inspectFuncdeleteSchedule   func(ctx context.Context, kind int16, name string)
+	afterdeleteScheduleCounter  uint64
+	beforedeleteScheduleCounter uint64
+	deleteScheduleMock          mStorageMockdeleteSchedule
 
 	funcgetTasks          func(ctx context.Context, kind int16, workerCountLimitForInstance uint16, workerCountLimitForQueueKind uint16) (tpa1 []*Task, err error)
 	inspectFuncgetTasks   func(ctx context.Context, kind int16, workerCountLimitForInstance uint16, workerCountLimitForQueueKind uint16)
@@ -84,6 +90,18 @@ type StorageMock struct {
 	afterrepairLostTasksCounter  uint64
 	beforerepairLostTasksCounter uint64
 	repairLostTasksMock          mStorageMockrepairLostTasks
+
+	funcspawnDueScheduledTasks          func(ctx context.Context, kind int16, maxAttempts uint16, ttlSeconds uint32, limit uint16) (i1 int, i2 int, err error)
+	inspectFuncspawnDueScheduledTasks   func(ctx context.Context, kind int16, maxAttempts uint16, ttlSeconds uint32, limit uint16)
+	afterspawnDueScheduledTasksCounter  uint64
+	beforespawnDueScheduledTasksCounter uint64
+	spawnDueScheduledTasksMock          mStorageMockspawnDueScheduledTasks
+
+	funcupsertSchedule          func(ctx context.Context, kind int16, name string, cronExpr string, payload []byte, maxAttempts uint16, ttlSeconds uint32, nextFireAt time.Time) (err error)
+	inspectFuncupsertSchedule   func(ctx context.Context, kind int16, name string, cronExpr string, payload []byte, maxAttempts uint16, ttlSeconds uint32, nextFireAt time.Time)
+	afterupsertScheduleCounter  uint64
+	beforeupsertScheduleCounter uint64
+	upsertScheduleMock          mStorageMockupsertSchedule
 }
 
 // NewStorageMock returns a mock for storage
@@ -117,6 +135,9 @@ func NewStorageMock(t minimock.Tester) *StorageMock {
 	m.createTaskTxMock = mStorageMockcreateTaskTx{mock: m}
 	m.createTaskTxMock.callArgs = []*StorageMockcreateTaskTxParams{}
 
+	m.deleteScheduleMock = mStorageMockdeleteSchedule{mock: m}
+	m.deleteScheduleMock.callArgs = []*StorageMockdeleteScheduleParams{}
+
 	m.getTasksMock = mStorageMockgetTasks{mock: m}
 	m.getTasksMock.callArgs = []*StorageMockgetTasksParams{}
 
@@ -125,6 +146,12 @@ func NewStorageMock(t minimock.Tester) *StorageMock {
 
 	m.repairLostTasksMock = mStorageMockrepairLostTasks{mock: m}
 	m.repairLostTasksMock.callArgs = []*StorageMockrepairLostTasksParams{}
+
+	m.spawnDueScheduledTasksMock = mStorageMockspawnDueScheduledTasks{mock: m}
+	m.spawnDueScheduledTasksMock.callArgs = []*StorageMockspawnDueScheduledTasksParams{}
+
+	m.upsertScheduleMock = mStorageMockupsertSchedule{mock: m}
+	m.upsertScheduleMock.callArgs = []*StorageMockupsertScheduleParams{}
 
 	return m
 }
@@ -1233,9 +1260,8 @@ type StorageMockcompleteTaskExpectation struct {
 
 // StorageMockcompleteTaskParams contains parameters of the storage.completeTask
 type StorageMockcompleteTaskParams struct {
-	ctx          context.Context
-	id           int64
-	delaySeconds uint32
+	ctx context.Context
+	id  int64
 }
 
 // StorageMockcompleteTaskResults contains results of the storage.completeTask
@@ -1244,7 +1270,7 @@ type StorageMockcompleteTaskResults struct {
 }
 
 // Expect sets up expected params for storage.completeTask
-func (mmcompleteTask *mStorageMockcompleteTask) Expect(ctx context.Context, id int64, delaySeconds uint32) *mStorageMockcompleteTask {
+func (mmcompleteTask *mStorageMockcompleteTask) Expect(ctx context.Context, id int64) *mStorageMockcompleteTask {
 	if mmcompleteTask.mock.funccompleteTask != nil {
 		mmcompleteTask.mock.t.Fatalf("StorageMock.completeTask mock is already set by Set")
 	}
@@ -1253,7 +1279,7 @@ func (mmcompleteTask *mStorageMockcompleteTask) Expect(ctx context.Context, id i
 		mmcompleteTask.defaultExpectation = &StorageMockcompleteTaskExpectation{}
 	}
 
-	mmcompleteTask.defaultExpectation.params = &StorageMockcompleteTaskParams{ctx, id, delaySeconds}
+	mmcompleteTask.defaultExpectation.params = &StorageMockcompleteTaskParams{ctx, id}
 	for _, e := range mmcompleteTask.expectations {
 		if minimock.Equal(e.params, mmcompleteTask.defaultExpectation.params) {
 			mmcompleteTask.mock.t.Fatalf("Expectation set by When has same params: %#v", *mmcompleteTask.defaultExpectation.params)
@@ -1264,7 +1290,7 @@ func (mmcompleteTask *mStorageMockcompleteTask) Expect(ctx context.Context, id i
 }
 
 // Inspect accepts an inspector function that has same arguments as the storage.completeTask
-func (mmcompleteTask *mStorageMockcompleteTask) Inspect(f func(ctx context.Context, id int64, delaySeconds uint32)) *mStorageMockcompleteTask {
+func (mmcompleteTask *mStorageMockcompleteTask) Inspect(f func(ctx context.Context, id int64)) *mStorageMockcompleteTask {
 	if mmcompleteTask.mock.inspectFunccompleteTask != nil {
 		mmcompleteTask.mock.t.Fatalf("Inspect function is already set for StorageMock.completeTask")
 	}
@@ -1288,7 +1314,7 @@ func (mmcompleteTask *mStorageMockcompleteTask) Return(err error) *StorageMock {
 }
 
 // Set uses given function f to mock the storage.completeTask method
-func (mmcompleteTask *mStorageMockcompleteTask) Set(f func(ctx context.Context, id int64, delaySeconds uint32) (err error)) *StorageMock {
+func (mmcompleteTask *mStorageMockcompleteTask) Set(f func(ctx context.Context, id int64) (err error)) *StorageMock {
 	if mmcompleteTask.defaultExpectation != nil {
 		mmcompleteTask.mock.t.Fatalf("Default expectation is already set for the storage.completeTask method")
 	}
@@ -1303,14 +1329,14 @@ func (mmcompleteTask *mStorageMockcompleteTask) Set(f func(ctx context.Context, 
 
 // When sets expectation for the storage.completeTask which will trigger the result defined by the following
 // Then helper
-func (mmcompleteTask *mStorageMockcompleteTask) When(ctx context.Context, id int64, delaySeconds uint32) *StorageMockcompleteTaskExpectation {
+func (mmcompleteTask *mStorageMockcompleteTask) When(ctx context.Context, id int64) *StorageMockcompleteTaskExpectation {
 	if mmcompleteTask.mock.funccompleteTask != nil {
 		mmcompleteTask.mock.t.Fatalf("StorageMock.completeTask mock is already set by Set")
 	}
 
 	expectation := &StorageMockcompleteTaskExpectation{
 		mock:   mmcompleteTask.mock,
-		params: &StorageMockcompleteTaskParams{ctx, id, delaySeconds},
+		params: &StorageMockcompleteTaskParams{ctx, id},
 	}
 	mmcompleteTask.expectations = append(mmcompleteTask.expectations, expectation)
 	return expectation
@@ -1323,15 +1349,15 @@ func (e *StorageMockcompleteTaskExpectation) Then(err error) *StorageMock {
 }
 
 // completeTask implements storage
-func (mmcompleteTask *StorageMock) completeTask(ctx context.Context, id int64, delaySeconds uint32) (err error) {
+func (mmcompleteTask *StorageMock) completeTask(ctx context.Context, id int64) (err error) {
 	mm_atomic.AddUint64(&mmcompleteTask.beforecompleteTaskCounter, 1)
 	defer mm_atomic.AddUint64(&mmcompleteTask.aftercompleteTaskCounter, 1)
 
 	if mmcompleteTask.inspectFunccompleteTask != nil {
-		mmcompleteTask.inspectFunccompleteTask(ctx, id, delaySeconds)
+		mmcompleteTask.inspectFunccompleteTask(ctx, id)
 	}
 
-	mm_params := &StorageMockcompleteTaskParams{ctx, id, delaySeconds}
+	mm_params := &StorageMockcompleteTaskParams{ctx, id}
 
 	// Record call args
 	mmcompleteTask.completeTaskMock.mutex.Lock()
@@ -1348,7 +1374,7 @@ func (mmcompleteTask *StorageMock) completeTask(ctx context.Context, id int64, d
 	if mmcompleteTask.completeTaskMock.defaultExpectation != nil {
 		mm_atomic.AddUint64(&mmcompleteTask.completeTaskMock.defaultExpectation.Counter, 1)
 		mm_want := mmcompleteTask.completeTaskMock.defaultExpectation.params
-		mm_got := StorageMockcompleteTaskParams{ctx, id, delaySeconds}
+		mm_got := StorageMockcompleteTaskParams{ctx, id}
 		if mm_want != nil && !minimock.Equal(*mm_want, mm_got) {
 			mmcompleteTask.t.Errorf("StorageMock.completeTask got unexpected parameters, want: %#v, got: %#v%s\n", *mm_want, mm_got, minimock.Diff(*mm_want, mm_got))
 		}
@@ -1360,9 +1386,9 @@ func (mmcompleteTask *StorageMock) completeTask(ctx context.Context, id int64, d
 		return (*mm_results).err
 	}
 	if mmcompleteTask.funccompleteTask != nil {
-		return mmcompleteTask.funccompleteTask(ctx, id, delaySeconds)
+		return mmcompleteTask.funccompleteTask(ctx, id)
 	}
-	mmcompleteTask.t.Fatalf("Unexpected call to StorageMock.completeTask. %v %v %v", ctx, id, delaySeconds)
+	mmcompleteTask.t.Fatalf("Unexpected call to StorageMock.completeTask. %v %v", ctx, id)
 	return
 }
 
@@ -1457,7 +1483,6 @@ type StorageMockcreateTaskParams struct {
 	ttlSeconds   uint32
 	key          string
 	delay        time.Duration
-	endlessly    bool
 	repeatPeriod uint32
 }
 
@@ -1467,7 +1492,7 @@ type StorageMockcreateTaskResults struct {
 }
 
 // Expect sets up expected params for storage.createTask
-func (mmcreateTask *mStorageMockcreateTask) Expect(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32) *mStorageMockcreateTask {
+func (mmcreateTask *mStorageMockcreateTask) Expect(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, repeatPeriod uint32) *mStorageMockcreateTask {
 	if mmcreateTask.mock.funccreateTask != nil {
 		mmcreateTask.mock.t.Fatalf("StorageMock.createTask mock is already set by Set")
 	}
@@ -1476,7 +1501,7 @@ func (mmcreateTask *mStorageMockcreateTask) Expect(ctx context.Context, kind int
 		mmcreateTask.defaultExpectation = &StorageMockcreateTaskExpectation{}
 	}
 
-	mmcreateTask.defaultExpectation.params = &StorageMockcreateTaskParams{ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod}
+	mmcreateTask.defaultExpectation.params = &StorageMockcreateTaskParams{ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, repeatPeriod}
 	for _, e := range mmcreateTask.expectations {
 		if minimock.Equal(e.params, mmcreateTask.defaultExpectation.params) {
 			mmcreateTask.mock.t.Fatalf("Expectation set by When has same params: %#v", *mmcreateTask.defaultExpectation.params)
@@ -1487,7 +1512,7 @@ func (mmcreateTask *mStorageMockcreateTask) Expect(ctx context.Context, kind int
 }
 
 // Inspect accepts an inspector function that has same arguments as the storage.createTask
-func (mmcreateTask *mStorageMockcreateTask) Inspect(f func(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32)) *mStorageMockcreateTask {
+func (mmcreateTask *mStorageMockcreateTask) Inspect(f func(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, repeatPeriod uint32)) *mStorageMockcreateTask {
 	if mmcreateTask.mock.inspectFunccreateTask != nil {
 		mmcreateTask.mock.t.Fatalf("Inspect function is already set for StorageMock.createTask")
 	}
@@ -1511,7 +1536,7 @@ func (mmcreateTask *mStorageMockcreateTask) Return(err error) *StorageMock {
 }
 
 // Set uses given function f to mock the storage.createTask method
-func (mmcreateTask *mStorageMockcreateTask) Set(f func(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32) (err error)) *StorageMock {
+func (mmcreateTask *mStorageMockcreateTask) Set(f func(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, repeatPeriod uint32) (err error)) *StorageMock {
 	if mmcreateTask.defaultExpectation != nil {
 		mmcreateTask.mock.t.Fatalf("Default expectation is already set for the storage.createTask method")
 	}
@@ -1526,14 +1551,14 @@ func (mmcreateTask *mStorageMockcreateTask) Set(f func(ctx context.Context, kind
 
 // When sets expectation for the storage.createTask which will trigger the result defined by the following
 // Then helper
-func (mmcreateTask *mStorageMockcreateTask) When(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32) *StorageMockcreateTaskExpectation {
+func (mmcreateTask *mStorageMockcreateTask) When(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, repeatPeriod uint32) *StorageMockcreateTaskExpectation {
 	if mmcreateTask.mock.funccreateTask != nil {
 		mmcreateTask.mock.t.Fatalf("StorageMock.createTask mock is already set by Set")
 	}
 
 	expectation := &StorageMockcreateTaskExpectation{
 		mock:   mmcreateTask.mock,
-		params: &StorageMockcreateTaskParams{ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod},
+		params: &StorageMockcreateTaskParams{ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, repeatPeriod},
 	}
 	mmcreateTask.expectations = append(mmcreateTask.expectations, expectation)
 	return expectation
@@ -1546,15 +1571,15 @@ func (e *StorageMockcreateTaskExpectation) Then(err error) *StorageMock {
 }
 
 // createTask implements storage
-func (mmcreateTask *StorageMock) createTask(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32) (err error) {
+func (mmcreateTask *StorageMock) createTask(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, repeatPeriod uint32) (err error) {
 	mm_atomic.AddUint64(&mmcreateTask.beforecreateTaskCounter, 1)
 	defer mm_atomic.AddUint64(&mmcreateTask.aftercreateTaskCounter, 1)
 
 	if mmcreateTask.inspectFunccreateTask != nil {
-		mmcreateTask.inspectFunccreateTask(ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod)
+		mmcreateTask.inspectFunccreateTask(ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, repeatPeriod)
 	}
 
-	mm_params := &StorageMockcreateTaskParams{ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod}
+	mm_params := &StorageMockcreateTaskParams{ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, repeatPeriod}
 
 	// Record call args
 	mmcreateTask.createTaskMock.mutex.Lock()
@@ -1571,7 +1596,7 @@ func (mmcreateTask *StorageMock) createTask(ctx context.Context, kind int16, max
 	if mmcreateTask.createTaskMock.defaultExpectation != nil {
 		mm_atomic.AddUint64(&mmcreateTask.createTaskMock.defaultExpectation.Counter, 1)
 		mm_want := mmcreateTask.createTaskMock.defaultExpectation.params
-		mm_got := StorageMockcreateTaskParams{ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod}
+		mm_got := StorageMockcreateTaskParams{ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, repeatPeriod}
 		if mm_want != nil && !minimock.Equal(*mm_want, mm_got) {
 			mmcreateTask.t.Errorf("StorageMock.createTask got unexpected parameters, want: %#v, got: %#v%s\n", *mm_want, mm_got, minimock.Diff(*mm_want, mm_got))
 		}
@@ -1583,9 +1608,9 @@ func (mmcreateTask *StorageMock) createTask(ctx context.Context, kind int16, max
 		return (*mm_results).err
 	}
 	if mmcreateTask.funccreateTask != nil {
-		return mmcreateTask.funccreateTask(ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod)
+		return mmcreateTask.funccreateTask(ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, repeatPeriod)
 	}
-	mmcreateTask.t.Fatalf("Unexpected call to StorageMock.createTask. %v %v %v %v %v %v %v %v %v", ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod)
+	mmcreateTask.t.Fatalf("Unexpected call to StorageMock.createTask. %v %v %v %v %v %v %v %v", ctx, kind, maxAttempts, payload, ttlSeconds, key, delay, repeatPeriod)
 	return
 }
 
@@ -1681,7 +1706,6 @@ type StorageMockcreateTaskTxParams struct {
 	ttlSeconds   uint32
 	key          string
 	delay        time.Duration
-	endlessly    bool
 	repeatPeriod uint32
 }
 
@@ -1691,7 +1715,7 @@ type StorageMockcreateTaskTxResults struct {
 }
 
 // Expect sets up expected params for storage.createTaskTx
-func (mmcreateTaskTx *mStorageMockcreateTaskTx) Expect(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32) *mStorageMockcreateTaskTx {
+func (mmcreateTaskTx *mStorageMockcreateTaskTx) Expect(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, repeatPeriod uint32) *mStorageMockcreateTaskTx {
 	if mmcreateTaskTx.mock.funccreateTaskTx != nil {
 		mmcreateTaskTx.mock.t.Fatalf("StorageMock.createTaskTx mock is already set by Set")
 	}
@@ -1700,7 +1724,7 @@ func (mmcreateTaskTx *mStorageMockcreateTaskTx) Expect(ctx context.Context, tx s
 		mmcreateTaskTx.defaultExpectation = &StorageMockcreateTaskTxExpectation{}
 	}
 
-	mmcreateTaskTx.defaultExpectation.params = &StorageMockcreateTaskTxParams{ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod}
+	mmcreateTaskTx.defaultExpectation.params = &StorageMockcreateTaskTxParams{ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, repeatPeriod}
 	for _, e := range mmcreateTaskTx.expectations {
 		if minimock.Equal(e.params, mmcreateTaskTx.defaultExpectation.params) {
 			mmcreateTaskTx.mock.t.Fatalf("Expectation set by When has same params: %#v", *mmcreateTaskTx.defaultExpectation.params)
@@ -1711,7 +1735,7 @@ func (mmcreateTaskTx *mStorageMockcreateTaskTx) Expect(ctx context.Context, tx s
 }
 
 // Inspect accepts an inspector function that has same arguments as the storage.createTaskTx
-func (mmcreateTaskTx *mStorageMockcreateTaskTx) Inspect(f func(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32)) *mStorageMockcreateTaskTx {
+func (mmcreateTaskTx *mStorageMockcreateTaskTx) Inspect(f func(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, repeatPeriod uint32)) *mStorageMockcreateTaskTx {
 	if mmcreateTaskTx.mock.inspectFunccreateTaskTx != nil {
 		mmcreateTaskTx.mock.t.Fatalf("Inspect function is already set for StorageMock.createTaskTx")
 	}
@@ -1735,7 +1759,7 @@ func (mmcreateTaskTx *mStorageMockcreateTaskTx) Return(err error) *StorageMock {
 }
 
 // Set uses given function f to mock the storage.createTaskTx method
-func (mmcreateTaskTx *mStorageMockcreateTaskTx) Set(f func(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32) (err error)) *StorageMock {
+func (mmcreateTaskTx *mStorageMockcreateTaskTx) Set(f func(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, repeatPeriod uint32) (err error)) *StorageMock {
 	if mmcreateTaskTx.defaultExpectation != nil {
 		mmcreateTaskTx.mock.t.Fatalf("Default expectation is already set for the storage.createTaskTx method")
 	}
@@ -1750,14 +1774,14 @@ func (mmcreateTaskTx *mStorageMockcreateTaskTx) Set(f func(ctx context.Context, 
 
 // When sets expectation for the storage.createTaskTx which will trigger the result defined by the following
 // Then helper
-func (mmcreateTaskTx *mStorageMockcreateTaskTx) When(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32) *StorageMockcreateTaskTxExpectation {
+func (mmcreateTaskTx *mStorageMockcreateTaskTx) When(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, repeatPeriod uint32) *StorageMockcreateTaskTxExpectation {
 	if mmcreateTaskTx.mock.funccreateTaskTx != nil {
 		mmcreateTaskTx.mock.t.Fatalf("StorageMock.createTaskTx mock is already set by Set")
 	}
 
 	expectation := &StorageMockcreateTaskTxExpectation{
 		mock:   mmcreateTaskTx.mock,
-		params: &StorageMockcreateTaskTxParams{ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod},
+		params: &StorageMockcreateTaskTxParams{ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, repeatPeriod},
 	}
 	mmcreateTaskTx.expectations = append(mmcreateTaskTx.expectations, expectation)
 	return expectation
@@ -1770,15 +1794,15 @@ func (e *StorageMockcreateTaskTxExpectation) Then(err error) *StorageMock {
 }
 
 // createTaskTx implements storage
-func (mmcreateTaskTx *StorageMock) createTaskTx(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32) (err error) {
+func (mmcreateTaskTx *StorageMock) createTaskTx(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, repeatPeriod uint32) (err error) {
 	mm_atomic.AddUint64(&mmcreateTaskTx.beforecreateTaskTxCounter, 1)
 	defer mm_atomic.AddUint64(&mmcreateTaskTx.aftercreateTaskTxCounter, 1)
 
 	if mmcreateTaskTx.inspectFunccreateTaskTx != nil {
-		mmcreateTaskTx.inspectFunccreateTaskTx(ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod)
+		mmcreateTaskTx.inspectFunccreateTaskTx(ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, repeatPeriod)
 	}
 
-	mm_params := &StorageMockcreateTaskTxParams{ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod}
+	mm_params := &StorageMockcreateTaskTxParams{ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, repeatPeriod}
 
 	// Record call args
 	mmcreateTaskTx.createTaskTxMock.mutex.Lock()
@@ -1795,7 +1819,7 @@ func (mmcreateTaskTx *StorageMock) createTaskTx(ctx context.Context, tx sqlx.Tx,
 	if mmcreateTaskTx.createTaskTxMock.defaultExpectation != nil {
 		mm_atomic.AddUint64(&mmcreateTaskTx.createTaskTxMock.defaultExpectation.Counter, 1)
 		mm_want := mmcreateTaskTx.createTaskTxMock.defaultExpectation.params
-		mm_got := StorageMockcreateTaskTxParams{ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod}
+		mm_got := StorageMockcreateTaskTxParams{ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, repeatPeriod}
 		if mm_want != nil && !minimock.Equal(*mm_want, mm_got) {
 			mmcreateTaskTx.t.Errorf("StorageMock.createTaskTx got unexpected parameters, want: %#v, got: %#v%s\n", *mm_want, mm_got, minimock.Diff(*mm_want, mm_got))
 		}
@@ -1807,9 +1831,9 @@ func (mmcreateTaskTx *StorageMock) createTaskTx(ctx context.Context, tx sqlx.Tx,
 		return (*mm_results).err
 	}
 	if mmcreateTaskTx.funccreateTaskTx != nil {
-		return mmcreateTaskTx.funccreateTaskTx(ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod)
+		return mmcreateTaskTx.funccreateTaskTx(ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, repeatPeriod)
 	}
-	mmcreateTaskTx.t.Fatalf("Unexpected call to StorageMock.createTaskTx. %v %v %v %v %v %v %v %v %v %v", ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, endlessly, repeatPeriod)
+	mmcreateTaskTx.t.Fatalf("Unexpected call to StorageMock.createTaskTx. %v %v %v %v %v %v %v %v %v", ctx, tx, kind, maxAttempts, payload, ttlSeconds, key, delay, repeatPeriod)
 	return
 }
 
@@ -1875,6 +1899,223 @@ func (m *StorageMock) MinimockcreateTaskTxInspect() {
 	// if func was set then invocations count should be greater than zero
 	if m.funccreateTaskTx != nil && mm_atomic.LoadUint64(&m.aftercreateTaskTxCounter) < 1 {
 		m.t.Error("Expected call to StorageMock.createTaskTx")
+	}
+}
+
+type mStorageMockdeleteSchedule struct {
+	mock               *StorageMock
+	defaultExpectation *StorageMockdeleteScheduleExpectation
+	expectations       []*StorageMockdeleteScheduleExpectation
+
+	callArgs []*StorageMockdeleteScheduleParams
+	mutex    sync.RWMutex
+}
+
+// StorageMockdeleteScheduleExpectation specifies expectation struct of the storage.deleteSchedule
+type StorageMockdeleteScheduleExpectation struct {
+	mock    *StorageMock
+	params  *StorageMockdeleteScheduleParams
+	results *StorageMockdeleteScheduleResults
+	Counter uint64
+}
+
+// StorageMockdeleteScheduleParams contains parameters of the storage.deleteSchedule
+type StorageMockdeleteScheduleParams struct {
+	ctx  context.Context
+	kind int16
+	name string
+}
+
+// StorageMockdeleteScheduleResults contains results of the storage.deleteSchedule
+type StorageMockdeleteScheduleResults struct {
+	err error
+}
+
+// Expect sets up expected params for storage.deleteSchedule
+func (mmdeleteSchedule *mStorageMockdeleteSchedule) Expect(ctx context.Context, kind int16, name string) *mStorageMockdeleteSchedule {
+	if mmdeleteSchedule.mock.funcdeleteSchedule != nil {
+		mmdeleteSchedule.mock.t.Fatalf("StorageMock.deleteSchedule mock is already set by Set")
+	}
+
+	if mmdeleteSchedule.defaultExpectation == nil {
+		mmdeleteSchedule.defaultExpectation = &StorageMockdeleteScheduleExpectation{}
+	}
+
+	mmdeleteSchedule.defaultExpectation.params = &StorageMockdeleteScheduleParams{ctx, kind, name}
+	for _, e := range mmdeleteSchedule.expectations {
+		if minimock.Equal(e.params, mmdeleteSchedule.defaultExpectation.params) {
+			mmdeleteSchedule.mock.t.Fatalf("Expectation set by When has same params: %#v", *mmdeleteSchedule.defaultExpectation.params)
+		}
+	}
+
+	return mmdeleteSchedule
+}
+
+// Inspect accepts an inspector function that has same arguments as the storage.deleteSchedule
+func (mmdeleteSchedule *mStorageMockdeleteSchedule) Inspect(f func(ctx context.Context, kind int16, name string)) *mStorageMockdeleteSchedule {
+	if mmdeleteSchedule.mock.inspectFuncdeleteSchedule != nil {
+		mmdeleteSchedule.mock.t.Fatalf("Inspect function is already set for StorageMock.deleteSchedule")
+	}
+
+	mmdeleteSchedule.mock.inspectFuncdeleteSchedule = f
+
+	return mmdeleteSchedule
+}
+
+// Return sets up results that will be returned by storage.deleteSchedule
+func (mmdeleteSchedule *mStorageMockdeleteSchedule) Return(err error) *StorageMock {
+	if mmdeleteSchedule.mock.funcdeleteSchedule != nil {
+		mmdeleteSchedule.mock.t.Fatalf("StorageMock.deleteSchedule mock is already set by Set")
+	}
+
+	if mmdeleteSchedule.defaultExpectation == nil {
+		mmdeleteSchedule.defaultExpectation = &StorageMockdeleteScheduleExpectation{mock: mmdeleteSchedule.mock}
+	}
+	mmdeleteSchedule.defaultExpectation.results = &StorageMockdeleteScheduleResults{err}
+	return mmdeleteSchedule.mock
+}
+
+// Set uses given function f to mock the storage.deleteSchedule method
+func (mmdeleteSchedule *mStorageMockdeleteSchedule) Set(f func(ctx context.Context, kind int16, name string) (err error)) *StorageMock {
+	if mmdeleteSchedule.defaultExpectation != nil {
+		mmdeleteSchedule.mock.t.Fatalf("Default expectation is already set for the storage.deleteSchedule method")
+	}
+
+	if len(mmdeleteSchedule.expectations) > 0 {
+		mmdeleteSchedule.mock.t.Fatalf("Some expectations are already set for the storage.deleteSchedule method")
+	}
+
+	mmdeleteSchedule.mock.funcdeleteSchedule = f
+	return mmdeleteSchedule.mock
+}
+
+// When sets expectation for the storage.deleteSchedule which will trigger the result defined by the following
+// Then helper
+func (mmdeleteSchedule *mStorageMockdeleteSchedule) When(ctx context.Context, kind int16, name string) *StorageMockdeleteScheduleExpectation {
+	if mmdeleteSchedule.mock.funcdeleteSchedule != nil {
+		mmdeleteSchedule.mock.t.Fatalf("StorageMock.deleteSchedule mock is already set by Set")
+	}
+
+	expectation := &StorageMockdeleteScheduleExpectation{
+		mock:   mmdeleteSchedule.mock,
+		params: &StorageMockdeleteScheduleParams{ctx, kind, name},
+	}
+	mmdeleteSchedule.expectations = append(mmdeleteSchedule.expectations, expectation)
+	return expectation
+}
+
+// Then sets up storage.deleteSchedule return parameters for the expectation previously defined by the When method
+func (e *StorageMockdeleteScheduleExpectation) Then(err error) *StorageMock {
+	e.results = &StorageMockdeleteScheduleResults{err}
+	return e.mock
+}
+
+// deleteSchedule implements storage
+func (mmdeleteSchedule *StorageMock) deleteSchedule(ctx context.Context, kind int16, name string) (err error) {
+	mm_atomic.AddUint64(&mmdeleteSchedule.beforedeleteScheduleCounter, 1)
+	defer mm_atomic.AddUint64(&mmdeleteSchedule.afterdeleteScheduleCounter, 1)
+
+	if mmdeleteSchedule.inspectFuncdeleteSchedule != nil {
+		mmdeleteSchedule.inspectFuncdeleteSchedule(ctx, kind, name)
+	}
+
+	mm_params := &StorageMockdeleteScheduleParams{ctx, kind, name}
+
+	// Record call args
+	mmdeleteSchedule.deleteScheduleMock.mutex.Lock()
+	mmdeleteSchedule.deleteScheduleMock.callArgs = append(mmdeleteSchedule.deleteScheduleMock.callArgs, mm_params)
+	mmdeleteSchedule.deleteScheduleMock.mutex.Unlock()
+
+	for _, e := range mmdeleteSchedule.deleteScheduleMock.expectations {
+		if minimock.Equal(e.params, mm_params) {
+			mm_atomic.AddUint64(&e.Counter, 1)
+			return e.results.err
+		}
+	}
+
+	if mmdeleteSchedule.deleteScheduleMock.defaultExpectation != nil {
+		mm_atomic.AddUint64(&mmdeleteSchedule.deleteScheduleMock.defaultExpectation.Counter, 1)
+		mm_want := mmdeleteSchedule.deleteScheduleMock.defaultExpectation.params
+		mm_got := StorageMockdeleteScheduleParams{ctx, kind, name}
+		if mm_want != nil && !minimock.Equal(*mm_want, mm_got) {
+			mmdeleteSchedule.t.Errorf("StorageMock.deleteSchedule got unexpected parameters, want: %#v, got: %#v%s\n", *mm_want, mm_got, minimock.Diff(*mm_want, mm_got))
+		}
+
+		mm_results := mmdeleteSchedule.deleteScheduleMock.defaultExpectation.results
+		if mm_results == nil {
+			mmdeleteSchedule.t.Fatal("No results are set for the StorageMock.deleteSchedule")
+		}
+		return (*mm_results).err
+	}
+	if mmdeleteSchedule.funcdeleteSchedule != nil {
+		return mmdeleteSchedule.funcdeleteSchedule(ctx, kind, name)
+	}
+	mmdeleteSchedule.t.Fatalf("Unexpected call to StorageMock.deleteSchedule. %v %v %v", ctx, kind, name)
+	return
+}
+
+// deleteScheduleAfterCounter returns a count of finished StorageMock.deleteSchedule invocations
+func (mmdeleteSchedule *StorageMock) deleteScheduleAfterCounter() uint64 {
+	return mm_atomic.LoadUint64(&mmdeleteSchedule.afterdeleteScheduleCounter)
+}
+
+// deleteScheduleBeforeCounter returns a count of StorageMock.deleteSchedule invocations
+func (mmdeleteSchedule *StorageMock) deleteScheduleBeforeCounter() uint64 {
+	return mm_atomic.LoadUint64(&mmdeleteSchedule.beforedeleteScheduleCounter)
+}
+
+// Calls returns a list of arguments used in each call to StorageMock.deleteSchedule.
+// The list is in the same order as the calls were made (i.e. recent calls have a higher index)
+func (mmdeleteSchedule *mStorageMockdeleteSchedule) Calls() []*StorageMockdeleteScheduleParams {
+	mmdeleteSchedule.mutex.RLock()
+
+	argCopy := make([]*StorageMockdeleteScheduleParams, len(mmdeleteSchedule.callArgs))
+	copy(argCopy, mmdeleteSchedule.callArgs)
+
+	mmdeleteSchedule.mutex.RUnlock()
+
+	return argCopy
+}
+
+// MinimockdeleteScheduleDone returns true if the count of the deleteSchedule invocations corresponds
+// the number of defined expectations
+func (m *StorageMock) MinimockdeleteScheduleDone() bool {
+	for _, e := range m.deleteScheduleMock.expectations {
+		if mm_atomic.LoadUint64(&e.Counter) < 1 {
+			return false
+		}
+	}
+
+	// if default expectation was set then invocations count should be greater than zero
+	if m.deleteScheduleMock.defaultExpectation != nil && mm_atomic.LoadUint64(&m.afterdeleteScheduleCounter) < 1 {
+		return false
+	}
+	// if func was set then invocations count should be greater than zero
+	if m.funcdeleteSchedule != nil && mm_atomic.LoadUint64(&m.afterdeleteScheduleCounter) < 1 {
+		return false
+	}
+	return true
+}
+
+// MinimockdeleteScheduleInspect logs each unmet expectation
+func (m *StorageMock) MinimockdeleteScheduleInspect() {
+	for _, e := range m.deleteScheduleMock.expectations {
+		if mm_atomic.LoadUint64(&e.Counter) < 1 {
+			m.t.Errorf("Expected call to StorageMock.deleteSchedule with params: %#v", *e.params)
+		}
+	}
+
+	// if default expectation was set then invocations count should be greater than zero
+	if m.deleteScheduleMock.defaultExpectation != nil && mm_atomic.LoadUint64(&m.afterdeleteScheduleCounter) < 1 {
+		if m.deleteScheduleMock.defaultExpectation.params == nil {
+			m.t.Error("Expected call to StorageMock.deleteSchedule")
+		} else {
+			m.t.Errorf("Expected call to StorageMock.deleteSchedule with params: %#v", *m.deleteScheduleMock.defaultExpectation.params)
+		}
+	}
+	// if func was set then invocations count should be greater than zero
+	if m.funcdeleteSchedule != nil && mm_atomic.LoadUint64(&m.afterdeleteScheduleCounter) < 1 {
+		m.t.Error("Expected call to StorageMock.deleteSchedule")
 	}
 }
 
@@ -2532,6 +2773,449 @@ func (m *StorageMock) MinimockrepairLostTasksInspect() {
 	}
 }
 
+type mStorageMockspawnDueScheduledTasks struct {
+	mock               *StorageMock
+	defaultExpectation *StorageMockspawnDueScheduledTasksExpectation
+	expectations       []*StorageMockspawnDueScheduledTasksExpectation
+
+	callArgs []*StorageMockspawnDueScheduledTasksParams
+	mutex    sync.RWMutex
+}
+
+// StorageMockspawnDueScheduledTasksExpectation specifies expectation struct of the storage.spawnDueScheduledTasks
+type StorageMockspawnDueScheduledTasksExpectation struct {
+	mock    *StorageMock
+	params  *StorageMockspawnDueScheduledTasksParams
+	results *StorageMockspawnDueScheduledTasksResults
+	Counter uint64
+}
+
+// StorageMockspawnDueScheduledTasksParams contains parameters of the storage.spawnDueScheduledTasks
+type StorageMockspawnDueScheduledTasksParams struct {
+	ctx         context.Context
+	kind        int16
+	maxAttempts uint16
+	ttlSeconds  uint32
+	limit       uint16
+}
+
+// StorageMockspawnDueScheduledTasksResults contains results of the storage.spawnDueScheduledTasks
+type StorageMockspawnDueScheduledTasksResults struct {
+	i1  int
+	i2  int
+	err error
+}
+
+// Expect sets up expected params for storage.spawnDueScheduledTasks
+func (mmspawnDueScheduledTasks *mStorageMockspawnDueScheduledTasks) Expect(ctx context.Context, kind int16, maxAttempts uint16, ttlSeconds uint32, limit uint16) *mStorageMockspawnDueScheduledTasks {
+	if mmspawnDueScheduledTasks.mock.funcspawnDueScheduledTasks != nil {
+		mmspawnDueScheduledTasks.mock.t.Fatalf("StorageMock.spawnDueScheduledTasks mock is already set by Set")
+	}
+
+	if mmspawnDueScheduledTasks.defaultExpectation == nil {
+		mmspawnDueScheduledTasks.defaultExpectation = &StorageMockspawnDueScheduledTasksExpectation{}
+	}
+
+	mmspawnDueScheduledTasks.defaultExpectation.params = &StorageMockspawnDueScheduledTasksParams{ctx, kind, maxAttempts, ttlSeconds, limit}
+	for _, e := range mmspawnDueScheduledTasks.expectations {
+		if minimock.Equal(e.params, mmspawnDueScheduledTasks.defaultExpectation.params) {
+			mmspawnDueScheduledTasks.mock.t.Fatalf("Expectation set by When has same params: %#v", *mmspawnDueScheduledTasks.defaultExpectation.params)
+		}
+	}
+
+	return mmspawnDueScheduledTasks
+}
+
+// Inspect accepts an inspector function that has same arguments as the storage.spawnDueScheduledTasks
+func (mmspawnDueScheduledTasks *mStorageMockspawnDueScheduledTasks) Inspect(f func(ctx context.Context, kind int16, maxAttempts uint16, ttlSeconds uint32, limit uint16)) *mStorageMockspawnDueScheduledTasks {
+	if mmspawnDueScheduledTasks.mock.inspectFuncspawnDueScheduledTasks != nil {
+		mmspawnDueScheduledTasks.mock.t.Fatalf("Inspect function is already set for StorageMock.spawnDueScheduledTasks")
+	}
+
+	mmspawnDueScheduledTasks.mock.inspectFuncspawnDueScheduledTasks = f
+
+	return mmspawnDueScheduledTasks
+}
+
+// Return sets up results that will be returned by storage.spawnDueScheduledTasks
+func (mmspawnDueScheduledTasks *mStorageMockspawnDueScheduledTasks) Return(i1 int, i2 int, err error) *StorageMock {
+	if mmspawnDueScheduledTasks.mock.funcspawnDueScheduledTasks != nil {
+		mmspawnDueScheduledTasks.mock.t.Fatalf("StorageMock.spawnDueScheduledTasks mock is already set by Set")
+	}
+
+	if mmspawnDueScheduledTasks.defaultExpectation == nil {
+		mmspawnDueScheduledTasks.defaultExpectation = &StorageMockspawnDueScheduledTasksExpectation{mock: mmspawnDueScheduledTasks.mock}
+	}
+	mmspawnDueScheduledTasks.defaultExpectation.results = &StorageMockspawnDueScheduledTasksResults{i1, i2, err}
+	return mmspawnDueScheduledTasks.mock
+}
+
+// Set uses given function f to mock the storage.spawnDueScheduledTasks method
+func (mmspawnDueScheduledTasks *mStorageMockspawnDueScheduledTasks) Set(f func(ctx context.Context, kind int16, maxAttempts uint16, ttlSeconds uint32, limit uint16) (i1 int, i2 int, err error)) *StorageMock {
+	if mmspawnDueScheduledTasks.defaultExpectation != nil {
+		mmspawnDueScheduledTasks.mock.t.Fatalf("Default expectation is already set for the storage.spawnDueScheduledTasks method")
+	}
+
+	if len(mmspawnDueScheduledTasks.expectations) > 0 {
+		mmspawnDueScheduledTasks.mock.t.Fatalf("Some expectations are already set for the storage.spawnDueScheduledTasks method")
+	}
+
+	mmspawnDueScheduledTasks.mock.funcspawnDueScheduledTasks = f
+	return mmspawnDueScheduledTasks.mock
+}
+
+// When sets expectation for the storage.spawnDueScheduledTasks which will trigger the result defined by the following
+// Then helper
+func (mmspawnDueScheduledTasks *mStorageMockspawnDueScheduledTasks) When(ctx context.Context, kind int16, maxAttempts uint16, ttlSeconds uint32, limit uint16) *StorageMockspawnDueScheduledTasksExpectation {
+	if mmspawnDueScheduledTasks.mock.funcspawnDueScheduledTasks != nil {
+		mmspawnDueScheduledTasks.mock.t.Fatalf("StorageMock.spawnDueScheduledTasks mock is already set by Set")
+	}
+
+	expectation := &StorageMockspawnDueScheduledTasksExpectation{
+		mock:   mmspawnDueScheduledTasks.mock,
+		params: &StorageMockspawnDueScheduledTasksParams{ctx, kind, maxAttempts, ttlSeconds, limit},
+	}
+	mmspawnDueScheduledTasks.expectations = append(mmspawnDueScheduledTasks.expectations, expectation)
+	return expectation
+}
+
+// Then sets up storage.spawnDueScheduledTasks return parameters for the expectation previously defined by the When method
+func (e *StorageMockspawnDueScheduledTasksExpectation) Then(i1 int, i2 int, err error) *StorageMock {
+	e.results = &StorageMockspawnDueScheduledTasksResults{i1, i2, err}
+	return e.mock
+}
+
+// spawnDueScheduledTasks implements storage
+func (mmspawnDueScheduledTasks *StorageMock) spawnDueScheduledTasks(ctx context.Context, kind int16, maxAttempts uint16, ttlSeconds uint32, limit uint16) (i1 int, i2 int, err error) {
+	mm_atomic.AddUint64(&mmspawnDueScheduledTasks.beforespawnDueScheduledTasksCounter, 1)
+	defer mm_atomic.AddUint64(&mmspawnDueScheduledTasks.afterspawnDueScheduledTasksCounter, 1)
+
+	if mmspawnDueScheduledTasks.inspectFuncspawnDueScheduledTasks != nil {
+		mmspawnDueScheduledTasks.inspectFuncspawnDueScheduledTasks(ctx, kind, maxAttempts, ttlSeconds, limit)
+	}
+
+	mm_params := &StorageMockspawnDueScheduledTasksParams{ctx, kind, maxAttempts, ttlSeconds, limit}
+
+	// Record call args
+	mmspawnDueScheduledTasks.spawnDueScheduledTasksMock.mutex.Lock()
+	mmspawnDueScheduledTasks.spawnDueScheduledTasksMock.callArgs = append(mmspawnDueScheduledTasks.spawnDueScheduledTasksMock.callArgs, mm_params)
+	mmspawnDueScheduledTasks.spawnDueScheduledTasksMock.mutex.Unlock()
+
+	for _, e := range mmspawnDueScheduledTasks.spawnDueScheduledTasksMock.expectations {
+		if minimock.Equal(e.params, mm_params) {
+			mm_atomic.AddUint64(&e.Counter, 1)
+			return e.results.i1, e.results.i2, e.results.err
+		}
+	}
+
+	if mmspawnDueScheduledTasks.spawnDueScheduledTasksMock.defaultExpectation != nil {
+		mm_atomic.AddUint64(&mmspawnDueScheduledTasks.spawnDueScheduledTasksMock.defaultExpectation.Counter, 1)
+		mm_want := mmspawnDueScheduledTasks.spawnDueScheduledTasksMock.defaultExpectation.params
+		mm_got := StorageMockspawnDueScheduledTasksParams{ctx, kind, maxAttempts, ttlSeconds, limit}
+		if mm_want != nil && !minimock.Equal(*mm_want, mm_got) {
+			mmspawnDueScheduledTasks.t.Errorf("StorageMock.spawnDueScheduledTasks got unexpected parameters, want: %#v, got: %#v%s\n", *mm_want, mm_got, minimock.Diff(*mm_want, mm_got))
+		}
+
+		mm_results := mmspawnDueScheduledTasks.spawnDueScheduledTasksMock.defaultExpectation.results
+		if mm_results == nil {
+			mmspawnDueScheduledTasks.t.Fatal("No results are set for the StorageMock.spawnDueScheduledTasks")
+		}
+		return (*mm_results).i1, (*mm_results).i2, (*mm_results).err
+	}
+	if mmspawnDueScheduledTasks.funcspawnDueScheduledTasks != nil {
+		return mmspawnDueScheduledTasks.funcspawnDueScheduledTasks(ctx, kind, maxAttempts, ttlSeconds, limit)
+	}
+	mmspawnDueScheduledTasks.t.Fatalf("Unexpected call to StorageMock.spawnDueScheduledTasks. %v %v %v %v %v", ctx, kind, maxAttempts, ttlSeconds, limit)
+	return
+}
+
+// spawnDueScheduledTasksAfterCounter returns a count of finished StorageMock.spawnDueScheduledTasks invocations
+func (mmspawnDueScheduledTasks *StorageMock) spawnDueScheduledTasksAfterCounter() uint64 {
+	return mm_atomic.LoadUint64(&mmspawnDueScheduledTasks.afterspawnDueScheduledTasksCounter)
+}
+
+// spawnDueScheduledTasksBeforeCounter returns a count of StorageMock.spawnDueScheduledTasks invocations
+func (mmspawnDueScheduledTasks *StorageMock) spawnDueScheduledTasksBeforeCounter() uint64 {
+	return mm_atomic.LoadUint64(&mmspawnDueScheduledTasks.beforespawnDueScheduledTasksCounter)
+}
+
+// Calls returns a list of arguments used in each call to StorageMock.spawnDueScheduledTasks.
+// The list is in the same order as the calls were made (i.e. recent calls have a higher index)
+func (mmspawnDueScheduledTasks *mStorageMockspawnDueScheduledTasks) Calls() []*StorageMockspawnDueScheduledTasksParams {
+	mmspawnDueScheduledTasks.mutex.RLock()
+
+	argCopy := make([]*StorageMockspawnDueScheduledTasksParams, len(mmspawnDueScheduledTasks.callArgs))
+	copy(argCopy, mmspawnDueScheduledTasks.callArgs)
+
+	mmspawnDueScheduledTasks.mutex.RUnlock()
+
+	return argCopy
+}
+
+// MinimockspawnDueScheduledTasksDone returns true if the count of the spawnDueScheduledTasks invocations corresponds
+// the number of defined expectations
+func (m *StorageMock) MinimockspawnDueScheduledTasksDone() bool {
+	for _, e := range m.spawnDueScheduledTasksMock.expectations {
+		if mm_atomic.LoadUint64(&e.Counter) < 1 {
+			return false
+		}
+	}
+
+	// if default expectation was set then invocations count should be greater than zero
+	if m.spawnDueScheduledTasksMock.defaultExpectation != nil && mm_atomic.LoadUint64(&m.afterspawnDueScheduledTasksCounter) < 1 {
+		return false
+	}
+	// if func was set then invocations count should be greater than zero
+	if m.funcspawnDueScheduledTasks != nil && mm_atomic.LoadUint64(&m.afterspawnDueScheduledTasksCounter) < 1 {
+		return false
+	}
+	return true
+}
+
+// MinimockspawnDueScheduledTasksInspect logs each unmet expectation
+func (m *StorageMock) MinimockspawnDueScheduledTasksInspect() {
+	for _, e := range m.spawnDueScheduledTasksMock.expectations {
+		if mm_atomic.LoadUint64(&e.Counter) < 1 {
+			m.t.Errorf("Expected call to StorageMock.spawnDueScheduledTasks with params: %#v", *e.params)
+		}
+	}
+
+	// if default expectation was set then invocations count should be greater than zero
+	if m.spawnDueScheduledTasksMock.defaultExpectation != nil && mm_atomic.LoadUint64(&m.afterspawnDueScheduledTasksCounter) < 1 {
+		if m.spawnDueScheduledTasksMock.defaultExpectation.params == nil {
+			m.t.Error("Expected call to StorageMock.spawnDueScheduledTasks")
+		} else {
+			m.t.Errorf("Expected call to StorageMock.spawnDueScheduledTasks with params: %#v", *m.spawnDueScheduledTasksMock.defaultExpectation.params)
+		}
+	}
+	// if func was set then invocations count should be greater than zero
+	if m.funcspawnDueScheduledTasks != nil && mm_atomic.LoadUint64(&m.afterspawnDueScheduledTasksCounter) < 1 {
+		m.t.Error("Expected call to StorageMock.spawnDueScheduledTasks")
+	}
+}
+
+type mStorageMockupsertSchedule struct {
+	mock               *StorageMock
+	defaultExpectation *StorageMockupsertScheduleExpectation
+	expectations       []*StorageMockupsertScheduleExpectation
+
+	callArgs []*StorageMockupsertScheduleParams
+	mutex    sync.RWMutex
+}
+
+// StorageMockupsertScheduleExpectation specifies expectation struct of the storage.upsertSchedule
+type StorageMockupsertScheduleExpectation struct {
+	mock    *StorageMock
+	params  *StorageMockupsertScheduleParams
+	results *StorageMockupsertScheduleResults
+	Counter uint64
+}
+
+// StorageMockupsertScheduleParams contains parameters of the storage.upsertSchedule
+type StorageMockupsertScheduleParams struct {
+	ctx         context.Context
+	kind        int16
+	name        string
+	cronExpr    string
+	payload     []byte
+	maxAttempts uint16
+	ttlSeconds  uint32
+	nextFireAt  time.Time
+}
+
+// StorageMockupsertScheduleResults contains results of the storage.upsertSchedule
+type StorageMockupsertScheduleResults struct {
+	err error
+}
+
+// Expect sets up expected params for storage.upsertSchedule
+func (mmupsertSchedule *mStorageMockupsertSchedule) Expect(ctx context.Context, kind int16, name string, cronExpr string, payload []byte, maxAttempts uint16, ttlSeconds uint32, nextFireAt time.Time) *mStorageMockupsertSchedule {
+	if mmupsertSchedule.mock.funcupsertSchedule != nil {
+		mmupsertSchedule.mock.t.Fatalf("StorageMock.upsertSchedule mock is already set by Set")
+	}
+
+	if mmupsertSchedule.defaultExpectation == nil {
+		mmupsertSchedule.defaultExpectation = &StorageMockupsertScheduleExpectation{}
+	}
+
+	mmupsertSchedule.defaultExpectation.params = &StorageMockupsertScheduleParams{ctx, kind, name, cronExpr, payload, maxAttempts, ttlSeconds, nextFireAt}
+	for _, e := range mmupsertSchedule.expectations {
+		if minimock.Equal(e.params, mmupsertSchedule.defaultExpectation.params) {
+			mmupsertSchedule.mock.t.Fatalf("Expectation set by When has same params: %#v", *mmupsertSchedule.defaultExpectation.params)
+		}
+	}
+
+	return mmupsertSchedule
+}
+
+// Inspect accepts an inspector function that has same arguments as the storage.upsertSchedule
+func (mmupsertSchedule *mStorageMockupsertSchedule) Inspect(f func(ctx context.Context, kind int16, name string, cronExpr string, payload []byte, maxAttempts uint16, ttlSeconds uint32, nextFireAt time.Time)) *mStorageMockupsertSchedule {
+	if mmupsertSchedule.mock.inspectFuncupsertSchedule != nil {
+		mmupsertSchedule.mock.t.Fatalf("Inspect function is already set for StorageMock.upsertSchedule")
+	}
+
+	mmupsertSchedule.mock.inspectFuncupsertSchedule = f
+
+	return mmupsertSchedule
+}
+
+// Return sets up results that will be returned by storage.upsertSchedule
+func (mmupsertSchedule *mStorageMockupsertSchedule) Return(err error) *StorageMock {
+	if mmupsertSchedule.mock.funcupsertSchedule != nil {
+		mmupsertSchedule.mock.t.Fatalf("StorageMock.upsertSchedule mock is already set by Set")
+	}
+
+	if mmupsertSchedule.defaultExpectation == nil {
+		mmupsertSchedule.defaultExpectation = &StorageMockupsertScheduleExpectation{mock: mmupsertSchedule.mock}
+	}
+	mmupsertSchedule.defaultExpectation.results = &StorageMockupsertScheduleResults{err}
+	return mmupsertSchedule.mock
+}
+
+// Set uses given function f to mock the storage.upsertSchedule method
+func (mmupsertSchedule *mStorageMockupsertSchedule) Set(f func(ctx context.Context, kind int16, name string, cronExpr string, payload []byte, maxAttempts uint16, ttlSeconds uint32, nextFireAt time.Time) (err error)) *StorageMock {
+	if mmupsertSchedule.defaultExpectation != nil {
+		mmupsertSchedule.mock.t.Fatalf("Default expectation is already set for the storage.upsertSchedule method")
+	}
+
+	if len(mmupsertSchedule.expectations) > 0 {
+		mmupsertSchedule.mock.t.Fatalf("Some expectations are already set for the storage.upsertSchedule method")
+	}
+
+	mmupsertSchedule.mock.funcupsertSchedule = f
+	return mmupsertSchedule.mock
+}
+
+// When sets expectation for the storage.upsertSchedule which will trigger the result defined by the following
+// Then helper
+func (mmupsertSchedule *mStorageMockupsertSchedule) When(ctx context.Context, kind int16, name string, cronExpr string, payload []byte, maxAttempts uint16, ttlSeconds uint32, nextFireAt time.Time) *StorageMockupsertScheduleExpectation {
+	if mmupsertSchedule.mock.funcupsertSchedule != nil {
+		mmupsertSchedule.mock.t.Fatalf("StorageMock.upsertSchedule mock is already set by Set")
+	}
+
+	expectation := &StorageMockupsertScheduleExpectation{
+		mock:   mmupsertSchedule.mock,
+		params: &StorageMockupsertScheduleParams{ctx, kind, name, cronExpr, payload, maxAttempts, ttlSeconds, nextFireAt},
+	}
+	mmupsertSchedule.expectations = append(mmupsertSchedule.expectations, expectation)
+	return expectation
+}
+
+// Then sets up storage.upsertSchedule return parameters for the expectation previously defined by the When method
+func (e *StorageMockupsertScheduleExpectation) Then(err error) *StorageMock {
+	e.results = &StorageMockupsertScheduleResults{err}
+	return e.mock
+}
+
+// upsertSchedule implements storage
+func (mmupsertSchedule *StorageMock) upsertSchedule(ctx context.Context, kind int16, name string, cronExpr string, payload []byte, maxAttempts uint16, ttlSeconds uint32, nextFireAt time.Time) (err error) {
+	mm_atomic.AddUint64(&mmupsertSchedule.beforeupsertScheduleCounter, 1)
+	defer mm_atomic.AddUint64(&mmupsertSchedule.afterupsertScheduleCounter, 1)
+
+	if mmupsertSchedule.inspectFuncupsertSchedule != nil {
+		mmupsertSchedule.inspectFuncupsertSchedule(ctx, kind, name, cronExpr, payload, maxAttempts, ttlSeconds, nextFireAt)
+	}
+
+	mm_params := &StorageMockupsertScheduleParams{ctx, kind, name, cronExpr, payload, maxAttempts, ttlSeconds, nextFireAt}
+
+	// Record call args
+	mmupsertSchedule.upsertScheduleMock.mutex.Lock()
+	mmupsertSchedule.upsertScheduleMock.callArgs = append(mmupsertSchedule.upsertScheduleMock.callArgs, mm_params)
+	mmupsertSchedule.upsertScheduleMock.mutex.Unlock()
+
+	for _, e := range mmupsertSchedule.upsertScheduleMock.expectations {
+		if minimock.Equal(e.params, mm_params) {
+			mm_atomic.AddUint64(&e.Counter, 1)
+			return e.results.err
+		}
+	}
+
+	if mmupsertSchedule.upsertScheduleMock.defaultExpectation != nil {
+		mm_atomic.AddUint64(&mmupsertSchedule.upsertScheduleMock.defaultExpectation.Counter, 1)
+		mm_want := mmupsertSchedule.upsertScheduleMock.defaultExpectation.params
+		mm_got := StorageMockupsertScheduleParams{ctx, kind, name, cronExpr, payload, maxAttempts, ttlSeconds, nextFireAt}
+		if mm_want != nil && !minimock.Equal(*mm_want, mm_got) {
+			mmupsertSchedule.t.Errorf("StorageMock.upsertSchedule got unexpected parameters, want: %#v, got: %#v%s\n", *mm_want, mm_got, minimock.Diff(*mm_want, mm_got))
+		}
+
+		mm_results := mmupsertSchedule.upsertScheduleMock.defaultExpectation.results
+		if mm_results == nil {
+			mmupsertSchedule.t.Fatal("No results are set for the StorageMock.upsertSchedule")
+		}
+		return (*mm_results).err
+	}
+	if mmupsertSchedule.funcupsertSchedule != nil {
+		return mmupsertSchedule.funcupsertSchedule(ctx, kind, name, cronExpr, payload, maxAttempts, ttlSeconds, nextFireAt)
+	}
+	mmupsertSchedule.t.Fatalf("Unexpected call to StorageMock.upsertSchedule. %v %v %v %v %v %v %v %v", ctx, kind, name, cronExpr, payload, maxAttempts, ttlSeconds, nextFireAt)
+	return
+}
+
+// upsertScheduleAfterCounter returns a count of finished StorageMock.upsertSchedule invocations
+func (mmupsertSchedule *StorageMock) upsertScheduleAfterCounter() uint64 {
+	return mm_atomic.LoadUint64(&mmupsertSchedule.afterupsertScheduleCounter)
+}
+
+// upsertScheduleBeforeCounter returns a count of StorageMock.upsertSchedule invocations
+func (mmupsertSchedule *StorageMock) upsertScheduleBeforeCounter() uint64 {
+	return mm_atomic.LoadUint64(&mmupsertSchedule.beforeupsertScheduleCounter)
+}
+
+// Calls returns a list of arguments used in each call to StorageMock.upsertSchedule.
+// The list is in the same order as the calls were made (i.e. recent calls have a higher index)
+func (mmupsertSchedule *mStorageMockupsertSchedule) Calls() []*StorageMockupsertScheduleParams {
+	mmupsertSchedule.mutex.RLock()
+
+	argCopy := make([]*StorageMockupsertScheduleParams, len(mmupsertSchedule.callArgs))
+	copy(argCopy, mmupsertSchedule.callArgs)
+
+	mmupsertSchedule.mutex.RUnlock()
+
+	return argCopy
+}
+
+// MinimockupsertScheduleDone returns true if the count of the upsertSchedule invocations corresponds
+// the number of defined expectations
+func (m *StorageMock) MinimockupsertScheduleDone() bool {
+	for _, e := range m.upsertScheduleMock.expectations {
+		if mm_atomic.LoadUint64(&e.Counter) < 1 {
+			return false
+		}
+	}
+
+	// if default expectation was set then invocations count should be greater than zero
+	if m.upsertScheduleMock.defaultExpectation != nil && mm_atomic.LoadUint64(&m.afterupsertScheduleCounter) < 1 {
+		return false
+	}
+	// if func was set then invocations count should be greater than zero
+	if m.funcupsertSchedule != nil && mm_atomic.LoadUint64(&m.afterupsertScheduleCounter) < 1 {
+		return false
+	}
+	return true
+}
+
+// MinimockupsertScheduleInspect logs each unmet expectation
+func (m *StorageMock) MinimockupsertScheduleInspect() {
+	for _, e := range m.upsertScheduleMock.expectations {
+		if mm_atomic.LoadUint64(&e.Counter) < 1 {
+			m.t.Errorf("Expected call to StorageMock.upsertSchedule with params: %#v", *e.params)
+		}
+	}
+
+	// if default expectation was set then invocations count should be greater than zero
+	if m.upsertScheduleMock.defaultExpectation != nil && mm_atomic.LoadUint64(&m.afterupsertScheduleCounter) < 1 {
+		if m.upsertScheduleMock.defaultExpectation.params == nil {
+			m.t.Error("Expected call to StorageMock.upsertSchedule")
+		} else {
+			m.t.Errorf("Expected call to StorageMock.upsertSchedule with params: %#v", *m.upsertScheduleMock.defaultExpectation.params)
+		}
+	}
+	// if func was set then invocations count should be greater than zero
+	if m.funcupsertSchedule != nil && mm_atomic.LoadUint64(&m.afterupsertScheduleCounter) < 1 {
+		m.t.Error("Expected call to StorageMock.upsertSchedule")
+	}
+}
+
 // MinimockFinish checks that all mocked methods have been called the expected number of times
 func (m *StorageMock) MinimockFinish() {
 	if !m.minimockDone() {
@@ -2551,11 +3235,17 @@ func (m *StorageMock) MinimockFinish() {
 
 		m.MinimockcreateTaskTxInspect()
 
+		m.MinimockdeleteScheduleInspect()
+
 		m.MinimockgetTasksInspect()
 
 		m.MinimockrefuseTaskInspect()
 
 		m.MinimockrepairLostTasksInspect()
+
+		m.MinimockspawnDueScheduledTasksInspect()
+
+		m.MinimockupsertScheduleInspect()
 		m.t.FailNow()
 	}
 }
@@ -2587,7 +3277,10 @@ func (m *StorageMock) minimockDone() bool {
 		m.MinimockcompleteTaskDone() &&
 		m.MinimockcreateTaskDone() &&
 		m.MinimockcreateTaskTxDone() &&
+		m.MinimockdeleteScheduleDone() &&
 		m.MinimockgetTasksDone() &&
 		m.MinimockrefuseTaskDone() &&
-		m.MinimockrepairLostTasksDone()
+		m.MinimockrepairLostTasksDone() &&
+		m.MinimockspawnDueScheduledTasksDone() &&
+		m.MinimockupsertScheduleDone()
 }

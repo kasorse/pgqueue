@@ -14,6 +14,10 @@ import (
 const (
 	taskFetcherTickerInterval     = 1111 * time.Millisecond
 	maintenanceLoopTickerInterval = 1333 * time.Millisecond
+
+	// scheduleSpawnLimit caps how many schedules of one kind a single
+	// maintenance tick may fire.
+	scheduleSpawnLimit uint16 = 100
 )
 
 // Task parameters
@@ -68,8 +72,14 @@ type Options struct {
 	// account the AttemptLimitSeconds and DelayAfterRefusedSeconds,
 	// ProgressiveDelayAfterRefusedSeconds parameters.
 	TTLSeconds uint32
-	// Repeat task endlessly.
-	RepeatEndlessly bool
+}
+
+// ScheduleOptions overrides kind options for the tasks that a schedule spawns.
+type ScheduleOptions struct {
+	// Amount of retries for a spawned task. 0 means inherit from the kind.
+	MaxAttempts uint16
+	// TTL in seconds for a spawned task. 0 means inherit from the kind.
+	TTLSeconds uint32
 }
 
 type kindDescription struct {
@@ -78,10 +88,10 @@ type kindDescription struct {
 }
 
 type storage interface {
-	createTask(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32) error
-	createTaskTx(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, endlessly bool, repeatPeriod uint32) error
+	createTask(ctx context.Context, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, repeatPeriod uint32) error
+	createTaskTx(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte, ttlSeconds uint32, key string, delay time.Duration, repeatPeriod uint32) error
 	getTasks(ctx context.Context, kind int16, workerCountLimitForInstance uint16, workerCountLimitForQueueKind uint16) ([]*Task, error)
-	completeTask(ctx context.Context, id int64, delaySeconds uint32) error
+	completeTask(ctx context.Context, id int64) error
 	refuseTask(ctx context.Context, id int64, reason string, delaySeconds uint32) error
 	abortTask(ctx context.Context, id int64, reason string) error
 	cancelTaskByKey(ctx context.Context, kind int16, key string, reason string) error
@@ -89,6 +99,9 @@ type storage interface {
 	repairLostTasks(ctx context.Context, kind int16, lossSeconds uint32) error
 	archiveClosedTasks(ctx context.Context, kind int16, waitingHours uint16) error
 	addRetriesToFailedTasks(ctx context.Context, kind int16, retryCnt int64) error
+	upsertSchedule(ctx context.Context, kind int16, name string, cronExpr string, payload []byte, maxAttempts uint16, ttlSeconds uint32, nextFireAt time.Time) error
+	deleteSchedule(ctx context.Context, kind int16, name string) error
+	spawnDueScheduledTasks(ctx context.Context, kind int16, maxAttempts uint16, ttlSeconds uint32, limit uint16) (int, int, error)
 }
 
 type workerMonitor interface {
@@ -171,7 +184,7 @@ func (qp *processor) AppendTask(ctx context.Context, kind int16, payload []byte)
 		return ErrUnexpectedTaskKind
 	}
 
-	err := qp.storage.createTask(ctx, kind, kindData.opts.MaxAttempts, payload, kindData.opts.TTLSeconds, emptyKey, zeroDuration, kindData.opts.RepeatEndlessly, zeroRepeatPeriod)
+	err := qp.storage.createTask(ctx, kind, kindData.opts.MaxAttempts, payload, kindData.opts.TTLSeconds, emptyKey, zeroDuration, zeroRepeatPeriod)
 	if err != nil {
 		return errors.Wrap(err, "storage.createTask error")
 	}
@@ -186,7 +199,7 @@ func (qp *processor) AppendTaskTx(ctx context.Context, tx sqlx.Tx, kind int16, p
 		return ErrUnexpectedTaskKind
 	}
 
-	err := qp.storage.createTaskTx(ctx, tx, kind, kindData.opts.MaxAttempts, payload, kindData.opts.TTLSeconds, emptyKey, zeroDuration, kindData.opts.RepeatEndlessly, zeroRepeatPeriod)
+	err := qp.storage.createTaskTx(ctx, tx, kind, kindData.opts.MaxAttempts, payload, kindData.opts.TTLSeconds, emptyKey, zeroDuration, zeroRepeatPeriod)
 	if err != nil {
 		return errors.Wrap(err, "storage.createTaskTx error")
 	}
@@ -233,7 +246,7 @@ func (qp *processor) AppendTaskWithOptions(ctx context.Context, kind int16, payl
 		useOpts = *opts
 	}
 
-	err := qp.storage.createTask(ctx, kind, useOpts.MaxAttempts, payload, useOpts.TTLSeconds, key, delay, useOpts.RepeatEndlessly, repeatPeriod)
+	err := qp.storage.createTask(ctx, kind, useOpts.MaxAttempts, payload, useOpts.TTLSeconds, key, delay, repeatPeriod)
 	if err != nil {
 		return errors.Wrap(err, "storage.createTask error")
 	}
@@ -269,9 +282,64 @@ func (qp *processor) AppendTaskWithOptionsTx(ctx context.Context, tx sqlx.Tx, ki
 		useOpts = *opts
 	}
 
-	err := qp.storage.createTaskTx(ctx, tx, kind, useOpts.MaxAttempts, payload, useOpts.TTLSeconds, key, delay, useOpts.RepeatEndlessly, repeatPeriod)
+	err := qp.storage.createTaskTx(ctx, tx, kind, useOpts.MaxAttempts, payload, useOpts.TTLSeconds, key, delay, repeatPeriod)
 	if err != nil {
 		return errors.Wrap(err, "storage.createTask error")
+	}
+
+	return nil
+}
+
+// ScheduleTask registers a recurring task described by a cron expression, or
+// updates the schedule that already has this name. The task is published by the
+// processor itself whenever the schedule comes due.
+//
+// cronExpr accepts the standard five-field spec ("0 0 * * *" runs the task every
+// day at 00:00), the "@daily"/"@hourly" descriptors, "@every 30m" intervals and
+// an optional "CRON_TZ=Europe/Moscow" prefix.
+//
+// The call is idempotent on (kind, name), so it is meant to be made on every
+// service start. Three properties are worth knowing:
+//
+//   - a schedule never fires at the moment it is created: the first task is
+//     published at the next moment the expression matches;
+//   - a fire missed while no processor was running is caught up once, not once
+//     per moment that passed;
+//   - a fire that comes due while the previous task of the same schedule is
+//     still open is skipped.
+func (qp *processor) ScheduleTask(ctx context.Context, kind int16, name string, cronExpr string, payload []byte, opts *ScheduleOptions) error {
+	if _, ok := qp.kindData[kind]; !ok {
+		return ErrUnexpectedTaskKind
+	}
+
+	if name == "" {
+		return errors.New("schedule name must not be empty")
+	}
+
+	nextFireAt, err := nextCronFire(cronExpr, time.Now())
+	if err != nil {
+		return err
+	}
+
+	var useOpts ScheduleOptions
+	if opts != nil {
+		useOpts = *opts
+	}
+
+	err = qp.storage.upsertSchedule(ctx, kind, name, cronExpr, payload, useOpts.MaxAttempts, useOpts.TTLSeconds, nextFireAt)
+	if err != nil {
+		return errors.Wrap(err, "storage.upsertSchedule error")
+	}
+
+	return nil
+}
+
+// UnscheduleTask removes the schedule with the given name. A task that this
+// schedule has already published is left to finish.
+func (qp *processor) UnscheduleTask(ctx context.Context, kind int16, name string) error {
+	err := qp.storage.deleteSchedule(ctx, kind, name)
+	if err != nil {
+		return errors.Wrap(err, "storage.deleteSchedule error")
 	}
 
 	return nil
@@ -378,11 +446,19 @@ func (qp *processor) runLoop(ctx context.Context) {
 	wg.Wait()
 }
 
-// 1. closed expired tasks (tasks woth expire date earlier than now)
-// 2. repair lost tasks (if task performs more than AttemptLimitSeconds then sets OpenMustRetry or ClosedLost status)
-// 3. delete all successful tasks that was finished more than week ago
+// 1. publish tasks for the schedules that came due
+// 2. closed expired tasks (tasks woth expire date earlier than now)
+// 3. repair lost tasks (if task performs more than AttemptLimitSeconds then sets OpenMustRetry or ClosedLost status)
+// 4. delete all successful tasks that was finished more than week ago
 func (qp *processor) processMaintenance(ctx context.Context, kind int16, opts Options) {
-	err := qp.storage.closeExpiredTasks(ctx, kind)
+	spawned, skipped, err := qp.storage.spawnDueScheduledTasks(ctx, kind, opts.MaxAttempts, opts.TTLSeconds, scheduleSpawnLimit)
+	if err != nil {
+		logger.Errorf(ctx, "storage.spawnDueScheduledTasks error: %v", err)
+	} else if spawned != 0 || skipped != 0 {
+		logger.Infof(ctx, "spawned %d scheduled tasks, skipped %d fires (kind=%d)", spawned, skipped, kind)
+	}
+
+	err = qp.storage.closeExpiredTasks(ctx, kind)
 	if err != nil {
 		logger.Errorf(ctx, "storage.closeExpiredTasks error: %v", err)
 	}

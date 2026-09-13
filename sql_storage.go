@@ -25,7 +25,7 @@ func newSQLStorage(
 
 type txFunc func(ctx context.Context, tx *sqlx.Tx) error
 
-func (s *sqlStorage) withTransaction(ctx context.Context, name string, fn txFunc) error {
+func (s *sqlStorage) withTransaction(ctx context.Context, name string, fn txFunc) (err error) {
 	tx, err := s.db.Beginx()
 	if err != nil {
 		return err
@@ -52,18 +52,13 @@ func rollbackTx(ctx context.Context, tx *sqlx.Tx) {
 }
 
 func (s *sqlStorage) createTask(ctx context.Context, kind int16, maxAttempts uint16, payload []byte,
-	ttlSeconds uint32, externalKey string, delay time.Duration, endlessly bool, repeatPeriod uint32) error {
+	ttlSeconds uint32, externalKey string, delay time.Duration, repeatPeriod uint32) error {
 
 	insertQuery := `
-		INSERT INTO public.queue (kind, attempts_left, endlessly, payload, expires_at, external_key, delayed_till,
+		INSERT INTO public.queue (kind, attempts_left, payload, expires_at, external_key, delayed_till,
 				repeat_period)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		ON CONFLICT (kind, external_key) WHERE status <= 3 do update set attempts_left=excluded.attempts_left,
-									payload=excluded.payload,
-									endlessly=excluded.endlessly,
-									repeat_period=excluded.repeat_period,
-									updated=current_timestamp
-		where queue.endlessly and queue.status != $9
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (kind, external_key) WHERE status <= 3 DO NOTHING
 	`
 
 	delayedTill := time.Now().Add(delay)
@@ -80,22 +75,17 @@ func (s *sqlStorage) createTask(ctx context.Context, kind int16, maxAttempts uin
 		nullableRepeatPeriod.Int32 = int32(repeatPeriod)
 	}
 
-	_, err := s.db.ExecContext(ctx, insertQuery, kind, maxAttempts, endlessly, string(payload), expiresAt, nullableExternalKey, delayedTill, nullableRepeatPeriod, status.OpenProcessing)
+	_, err := s.db.ExecContext(ctx, insertQuery, kind, maxAttempts, string(payload), expiresAt, nullableExternalKey, delayedTill, nullableRepeatPeriod)
 	return err
 }
 
 func (s *sqlStorage) createTaskTx(ctx context.Context, tx sqlx.Tx, kind int16, maxAttempts uint16, payload []byte,
-	ttlSeconds uint32, externalKey string, delay time.Duration, endlessly bool, repeatPeriod uint32) error {
+	ttlSeconds uint32, externalKey string, delay time.Duration, repeatPeriod uint32) error {
 	insertQuery := `
-	INSERT INTO public.queue (kind, attempts_left, endlessly, payload, expires_at, external_key, delayed_till,
+	INSERT INTO public.queue (kind, attempts_left, payload, expires_at, external_key, delayed_till,
 			repeat_period)
-	VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-	ON CONFLICT (kind, external_key) WHERE status <= 3 do update set attempts_left=excluded.attempts_left,
-								payload=excluded.payload,
-								endlessly=excluded.endlessly,
-								repeat_period=excluded.repeat_period,
-								updated=current_timestamp
-	where queue.endlessly and queue.status != $9
+	VALUES ($1, $2, $3, $4, $5, $6, $7)
+	ON CONFLICT (kind, external_key) WHERE status <= 3 DO NOTHING
 `
 
 	delayedTill := time.Now().Add(delay)
@@ -113,15 +103,13 @@ func (s *sqlStorage) createTaskTx(ctx context.Context, tx sqlx.Tx, kind int16, m
 	}
 
 	res, err := tx.ExecContext(ctx, insertQuery,
-		kind,                  // $1
-		maxAttempts,           // $2
-		endlessly,             // $3
-		string(payload),       // $4
-		expiresAt,             // $5
-		nullableExternalKey,   // $6
-		delayedTill,           // $7
-		nullableRepeatPeriod,  // $8
-		status.OpenProcessing, // $9
+		kind,                 // $1
+		maxAttempts,          // $2
+		string(payload),      // $3
+		expiresAt,            // $4
+		nullableExternalKey,  // $5
+		delayedTill,          // $6
+		nullableRepeatPeriod, // $7
 	)
 	if err != nil {
 		return err
@@ -147,7 +135,7 @@ func (s *sqlStorage) getTasks(ctx context.Context, kind int16, workerCountLimitF
 	query := `
 		UPDATE public.queue SET
 			status = $4,
-			attempts_left = CASE WHEN not endlessly THEN attempts_left - 1 ELSE attempts_left END,
+			attempts_left = attempts_left - 1,
 			updated = $2
 		WHERE id IN (
 			SELECT id
@@ -209,17 +197,13 @@ func (s *sqlStorage) getTasks(ctx context.Context, kind int16, workerCountLimitF
 	return fromDBTasks(dbTasks), err
 }
 
-func (s *sqlStorage) completeTask(ctx context.Context, id int64, delaySeconds uint32) error {
+func (s *sqlStorage) completeTask(ctx context.Context, id int64) error {
 	updateQuery := `
 		UPDATE public.queue SET
-			status = CASE WHEN not endlessly THEN $2::smallint ELSE $4::smallint END,
-			updated = $3,
-			delayed_till = $5
-		WHERE id = $1 and status = $6::smallint
+			status = $2,
+			updated = $3
+		WHERE id = $1 and status = $4::smallint
 	`
-
-	now := time.Now()
-	delayedTill := now.Add(time.Duration(delaySeconds) * time.Second)
 
 	_, err := s.db.ExecContext(
 		ctx,
@@ -227,9 +211,7 @@ func (s *sqlStorage) completeTask(ctx context.Context, id int64, delaySeconds ui
 		id,                    // $1
 		status.ClosedSuccess,  // $2
 		time.Now(),            // $3
-		status.OpenMustRetry,  // $4
-		delayedTill,           // $5
-		status.OpenProcessing, // $6
+		status.OpenProcessing, // $4
 	)
 	return err
 }
@@ -288,7 +270,6 @@ func (s *sqlStorage) closeExpiredTasks(ctx context.Context, kind int16) error {
 		WHERE kind = $1
 		  AND status < 50
 		  AND expires_at <= $3
-		  AND NOT endlessly
 	`
 
 	_, err := s.db.ExecContext(
@@ -304,7 +285,7 @@ func (s *sqlStorage) closeExpiredTasks(ctx context.Context, kind int16) error {
 func (s *sqlStorage) repairLostTasks(ctx context.Context, kind int16, lossSeconds uint32) error {
 	updateQuery := `
 		UPDATE public.queue SET
-			status = CASE WHEN attempts_left > 0 OR endlessly is true THEN $4::smallint ELSE $5::smallint END
+			status = CASE WHEN attempts_left > 0 THEN $4::smallint ELSE $5::smallint END
 		WHERE kind = $1
 		  AND status = $2
 		  AND updated <= $3
@@ -391,6 +372,203 @@ func (s *sqlStorage) addRetriesToFailedTasks(ctx context.Context, kind int16, re
 	)
 
 	return err
+}
+
+type dbSchedule struct {
+	ID          int64         `db:"id"`
+	Cron        string        `db:"cron"`
+	Payload     []byte        `db:"payload"`
+	MaxAttempts sql.NullInt16 `db:"max_attempts"`
+	TTLSeconds  sql.NullInt32 `db:"ttl_seconds"`
+}
+
+func (s *sqlStorage) upsertSchedule(ctx context.Context, kind int16, name string, cronExpr string, payload []byte,
+	maxAttempts uint16, ttlSeconds uint32, nextFireAt time.Time) error {
+
+	upsertQuery := `
+		INSERT INTO public.queue_schedule (kind, name, cron, payload, max_attempts, ttl_seconds, next_fire_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (kind, name) DO UPDATE SET
+			cron = excluded.cron,
+			payload = excluded.payload,
+			max_attempts = excluded.max_attempts,
+			ttl_seconds = excluded.ttl_seconds,
+			enabled = true,
+			updated = current_timestamp,
+			next_fire_at = CASE WHEN queue_schedule.cron IS DISTINCT FROM excluded.cron
+			                    THEN excluded.next_fire_at
+			                    ELSE queue_schedule.next_fire_at END
+	`
+
+	var nullableMaxAttempts sql.NullInt16
+	if maxAttempts != 0 {
+		nullableMaxAttempts.Valid = true
+		nullableMaxAttempts.Int16 = int16(maxAttempts)
+	}
+
+	var nullableTTLSeconds sql.NullInt32
+	if ttlSeconds != 0 {
+		nullableTTLSeconds.Valid = true
+		nullableTTLSeconds.Int32 = int32(ttlSeconds)
+	}
+
+	_, err := s.db.ExecContext(
+		ctx,
+		upsertQuery,
+		kind,                // $1
+		name,                // $2
+		cronExpr,            // $3
+		string(payload),     // $4
+		nullableMaxAttempts, // $5
+		nullableTTLSeconds,  // $6
+		nextFireAt,          // $7
+	)
+	return err
+}
+
+func (s *sqlStorage) deleteSchedule(ctx context.Context, kind int16, name string) error {
+	deleteQuery := `
+		DELETE FROM public.queue_schedule
+		WHERE kind = $1 AND name = $2
+	`
+
+	_, err := s.db.ExecContext(ctx, deleteQuery, kind, name)
+	return err
+}
+
+// spawnDueScheduledTasks publishes an ordinary task for every schedule of the
+// given kind whose next_fire_at has passed, and moves that schedule on to its
+// next fire. Both happen in one transaction under the schedule row lock, so
+// concurrent processors cannot spawn the same fire twice.
+//
+// A fire that comes due while the previous task of the same schedule is still
+// open is skipped rather than queued behind it; the returned counters report how
+// many tasks were published and how many fires were skipped.
+func (s *sqlStorage) spawnDueScheduledTasks(ctx context.Context, kind int16, maxAttempts uint16, ttlSeconds uint32,
+	limit uint16) (int, int, error) {
+
+	if limit == 0 {
+		return 0, 0, errors.New("wrong limit")
+	}
+
+	selectQuery := `
+		SELECT id, cron, payload, max_attempts, ttl_seconds
+		FROM public.queue_schedule
+		WHERE kind = $1
+		  AND enabled
+		  AND next_fire_at <= $2
+		ORDER BY next_fire_at
+		LIMIT $3
+		FOR UPDATE SKIP LOCKED
+	`
+
+	insertQuery := `
+		INSERT INTO public.queue (kind, attempts_left, payload, expires_at, delayed_till, schedule_id)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (schedule_id) WHERE schedule_id IS NOT NULL AND status <= 3 DO NOTHING
+	`
+
+	advanceQuery := `
+		UPDATE public.queue_schedule SET
+			next_fire_at = $2,
+			last_fire_at = $3,
+			updated = $3
+		WHERE id = $1
+	`
+
+	disableQuery := `
+		UPDATE public.queue_schedule SET
+			enabled = false,
+			updated = $2
+		WHERE id = $1
+	`
+
+	var spawned, skipped int
+
+	txErr := s.withTransaction(ctx, "spawn due scheduled tasks", func(ctx context.Context, tx *sqlx.Tx) error {
+		var (
+			now      = time.Now()
+			err      error
+			res      sql.Result
+			affected int64
+		)
+
+		var schedules []*dbSchedule
+		err = tx.SelectContext(ctx, &schedules, selectQuery,
+			kind,  // $1
+			now,   // $2
+			limit, // $3
+		)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return nil
+			}
+			return err
+		}
+
+		for _, schedule := range schedules {
+			nextFireAt, cronErr := nextCronFire(schedule.Cron, now)
+			if cronErr != nil {
+				// Only reachable for a row that bypassed ScheduleTask validation.
+				// Disable it: a schedule that cannot say when it fires next would
+				// otherwise stay due and spawn a task on every maintenance tick.
+				logger.Errorf(ctx, "disabling schedule %d of kind %d: %v", schedule.ID, kind, cronErr)
+				if _, err = tx.ExecContext(ctx, disableQuery, schedule.ID, now); err != nil {
+					return err
+				}
+				continue
+			}
+
+			attemptsLeft := maxAttempts
+			if schedule.MaxAttempts.Valid {
+				attemptsLeft = uint16(schedule.MaxAttempts.Int16)
+			}
+
+			ttl := ttlSeconds
+			if schedule.TTLSeconds.Valid {
+				ttl = uint32(schedule.TTLSeconds.Int32)
+			}
+
+			res, err = tx.ExecContext(ctx, insertQuery,
+				kind,                     // $1
+				attemptsLeft,             // $2
+				string(schedule.Payload), // $3
+				now.Add(time.Duration(ttl)*time.Second), // $4
+				now,         // $5
+				schedule.ID, // $6
+			)
+			if err != nil {
+				return err
+			}
+
+			affected, err = res.RowsAffected()
+			if err != nil {
+				return err
+			}
+			if affected == 0 {
+				// The previous task of this schedule is still open.
+				logger.Warnf(ctx, "skip fire of schedule %d of kind %d: previous task is still open", schedule.ID, kind)
+				skipped++
+			} else {
+				spawned++
+			}
+
+			if _, err := tx.ExecContext(ctx, advanceQuery,
+				schedule.ID, // $1
+				nextFireAt,  // $2
+				now,         // $3
+			); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+	if txErr != nil {
+		return 0, 0, txErr
+	}
+
+	return spawned, skipped, nil
 }
 
 type dbTask struct {

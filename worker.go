@@ -131,7 +131,7 @@ func (w *worker) processTask(
 	} else {
 		logger.Infof(ctx, "spent %d ms and processed successfully", handleTimeMs)
 
-		completeErr := w.storage.completeTask(ctx, task.ID, delay)
+		completeErr := w.storage.completeTask(ctx, task.ID)
 		if completeErr != nil {
 			logger.Errorf(ctx, "completeTask error: %v", completeErr)
 		}

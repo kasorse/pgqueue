@@ -15,7 +15,10 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const myTaskKind int16 = 42
+const (
+	myTaskKind      int16 = 42
+	myScheduledKind int16 = 43
+)
 
 func main() {
 	//logger.SetLevel(zap.DebugLevel)
@@ -32,12 +35,30 @@ func main() {
 		MaxAttempts:              0,
 		AttemptLimitSeconds:      10,
 		DelayAfterRefusedSeconds: 5,
-		RepeatEndlessly:          true,
+	})
+	processor.RegisterKind(myScheduledKind, &TaskHandler{}, pgqueue.Options{
+		Name:                     "my_scheduled_processor",
+		WorkerCount:              1,
+		MaxAttempts:              3,
+		AttemptLimitSeconds:      10,
+		DelayAfterRefusedSeconds: 5,
 	})
 	processorCtx, processorCancel := context.WithCancel(ctx)
 	processorDone, err := processor.Start(processorCtx)
 	if err != nil {
 		log.Fatalf("cannot start processor: %v", err)
+	}
+
+	// The processor publishes this task itself every 10 seconds. Use a cron
+	// expression such as "0 0 * * *" for a wall-clock schedule instead. The call
+	// is idempotent on (kind, name), so running it on every start is fine.
+	schedulePayload, err := json.Marshal(MyTask{Foobar: "scheduled"})
+	if err != nil {
+		log.Fatalf("cannot encode scheduled payload: %v", err)
+	}
+	err = processor.ScheduleTask(ctx, myScheduledKind, "every_ten_seconds", "@every 10s", schedulePayload, nil)
+	if err != nil {
+		log.Fatalf("cannot schedule task: %v", err)
 	}
 	httpHandler := &HTTPHandler{processor: processor}
 	http.HandleFunc("/append_task", httpHandler.AppendTask)
