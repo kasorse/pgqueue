@@ -32,6 +32,9 @@ it is also possible for two workers to run the same task concurrently
 If you are upgrading an already-running service from v0.1.x, follow [UPGRADE.md](UPGRADE.md) 
 instead of applying them all at once.
 2. Implement a metrics collector that has the `pgqueue.MetricsCollector` interface.
+Implement `pgqueue.KindInitializer` too if you alert on the absence of successful runs: `Start` then calls
+`InitKind` for every registered kind, so the collector can create its series at zero before the first task
+finishes (see the doc comment on `KindInitializer`).
 3. Implement a task handler that has the `pgqueue.TaskHandler` interface.
 4. Start the task processor in the main of your service.
 5. Schedule tasks using the `AppendTask` method. If you need to schedule a task 

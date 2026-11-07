@@ -169,12 +169,26 @@ func (qp *processor) SetLogLevel(level LogLevel) {
 // Start starts the task loop and returns a channel that closes when the loop stops.
 // The loop continues until the context is closed.
 func (qp *processor) Start(ctx context.Context) (<-chan struct{}, error) {
+	qp.initKindMetrics()
+
 	done := make(chan struct{})
 	go func() {
 		qp.runLoop(ctx)
 		close(done)
 	}()
 	return done, nil
+}
+
+// initKindMetrics lets a collector that implements KindInitializer create its series for every
+// registered kind before the first task runs.
+func (qp *processor) initKindMetrics() {
+	initializer, ok := qp.metricsCollector.(KindInitializer)
+	if !ok {
+		return
+	}
+	for kind, data := range qp.kindData {
+		initializer.InitKind(data.opts.Name, kind)
+	}
 }
 
 // AppendTask publishes a task to the queue.
